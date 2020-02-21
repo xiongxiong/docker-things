@@ -7,11 +7,8 @@ import (
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
-func Sub() {
-	broker := "tcp://localhost:1883"
-	topic := "hello"
-
-	receiveCount := 0
+// Sub ...
+func Sub(broker string, topic string) {
 	choke := make(chan [2]string)
 
 	opts := MQTT.NewClientOptions()
@@ -28,10 +25,9 @@ func Sub() {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}
-	for receiveCount < 3 {
+	for {
 		incoming := <-choke
 		fmt.Printf("RECEIVED TOPIC: %s MESSAGE: %s\n", incoming[0], incoming[1])
-		receiveCount++
 	}
 
 	client.Disconnect(250)

@@ -24,25 +24,25 @@ services:
         container_name: mosquitto
         image: eclipse-mosquitto
         ports: 
-            - 1883
-            - 9001
+            - 1883:1883
+            - 9001:9001
 
-    rabbitmq:
-        container_name: rabbitmq
-        image: rabbitmq:3
-        hostname: rabbitmq-host
-        ports: 
-            - 5672
+    # rabbitmq:
+    #     container_name: rabbitmq
+    #     image: rabbitmq:3
+    #     hostname: rabbitmq-host
+    #     ports: 
+    #         - 5672:5672
 
-    rabbitmq-admin:
-        container_name: rabbitmq-admin
-        image: rabbitmq:3-management
-        hostname: rabbitmq-admin
-        ports: 
-            - 15672
-        environment: 
-            RABBITMQ_DEFAULT_USER: guest
-            RABBITMQ_DEFAULT_PASS: guest
+    # rabbitmq-admin:
+    #     container_name: rabbitmq-admin
+    #     image: rabbitmq:3-management
+    #     hostname: rabbitmq-admin
+    #     ports: 
+    #         - 15672:15672
+    #     environment: 
+    #         RABBITMQ_DEFAULT_USER: guest
+    #         RABBITMQ_DEFAULT_PASS: guest
 
     # postgres:
     #     container_name: postgres
