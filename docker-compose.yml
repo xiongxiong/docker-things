@@ -27,42 +27,42 @@ services:
             - 1883:1883
             - 9001:9001
 
-    # rabbitmq:
-    #     container_name: rabbitmq
-    #     image: rabbitmq:3
-    #     hostname: rabbitmq-host
-    #     ports: 
-    #         - 5672:5672
+    rabbitmq:
+        container_name: rabbitmq
+        image: rabbitmq:3
+        hostname: rabbitmq-host
+        ports: 
+            - 5672:5672
 
-    # rabbitmq-admin:
-    #     container_name: rabbitmq-admin
-    #     image: rabbitmq:3-management
-    #     hostname: rabbitmq-admin
-    #     ports: 
-    #         - 15672:15672
-    #     environment: 
-    #         RABBITMQ_DEFAULT_USER: guest
-    #         RABBITMQ_DEFAULT_PASS: guest
+    rabbitmq-admin:
+        container_name: rabbitmq-admin
+        image: rabbitmq:3-management
+        hostname: rabbitmq-admin
+        ports: 
+            - 15672:15672
+        environment: 
+            RABBITMQ_DEFAULT_USER: guest
+            RABBITMQ_DEFAULT_PASS: guest
 
-    # postgres:
-    #     container_name: postgres
-    #     image: postgres
-    #     restart: always
-    #     ports: 
-    #         - 5432:5432
-    #     volumes: 
-    #         - postgres-data:/var/lib/postgresql/data
-    #     environment: 
-    #         POSTGRES_USER: guest
-    #         POSTGRES_PASSWORD: guest
-    #         POSTGRES_DB: thingspanel
+    postgres:
+        container_name: postgres
+        image: postgres
+        restart: always
+        ports: 
+            - 5432:5432
+        volumes: 
+            - postgres-data:/var/lib/postgresql/data
+        environment: 
+            POSTGRES_USER: guest
+            POSTGRES_PASSWORD: guest
+            POSTGRES_DB: thingspanel
 
-    # postgres-admin:
-    #     container_name: postgres-admin
-    #     image: adminer
-    #     restart: always
-    #     ports:
-    #         - 8080:8080
+    postgres-admin:
+        container_name: postgres-admin
+        image: adminer
+        restart: always
+        ports:
+            - 9000:9000
 
 volumes: 
     postgres-data: 
