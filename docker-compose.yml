@@ -30,14 +30,12 @@ services:
     rabbitmq:
         container_name: rabbitmq
         image: rabbitmq:3
-        hostname: rabbitmq-host
         ports: 
             - 5672:5672
 
     rabbitmq-admin:
         container_name: rabbitmq-admin
         image: rabbitmq:3-management
-        hostname: rabbitmq-admin
         ports: 
             - 15672:15672
         environment: 

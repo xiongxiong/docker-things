@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	rabbit "dataservice/rabbit"
-
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
 // SubscribeAll Subscribe all topic
-func SubscribeAll() {
+func SubscribeAll(msgProc func(topic, message string)) {
 	broker := flag.String("broker", "tcp://localhost:1883", "The broker URI. ex: tcp://localhost:1883")
 
 	choke := make(chan MQTT.Message)
@@ -36,7 +34,7 @@ func SubscribeAll() {
 		msg := <-choke
 		topic, payload := msg.Topic(), (string(msg.Payload()))
 		fmt.Printf("RECEIVED TOPIC: %s MESSAGE: %s\n", topic, payload)
-		rabbit.Push(topic, payload)
+		msgProc(topic, payload)
 	}
 }
 
