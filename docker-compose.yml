@@ -29,14 +29,9 @@ services:
 
     rabbitmq:
         container_name: rabbitmq
-        image: rabbitmq:3
-        ports: 
-            - 5672:5672
-
-    rabbitmq-admin:
-        container_name: rabbitmq-admin
         image: rabbitmq:3-management
         ports: 
+            - 5672:5672
             - 15672:15672
         environment: 
             RABBITMQ_DEFAULT_USER: guest
