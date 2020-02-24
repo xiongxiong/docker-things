@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"dataservice/mqtt"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -25,21 +24,15 @@ var conn *amqp.Connection
 var ch *amqp.Channel
 
 func main() {
-	defer tail()
+	prepare()
+	defer release()
 
-	toKill := make(chan os.Signal, 1)
-	signal.Notify(toKill, os.Interrupt, os.Kill)
-	select {
-	case s := <-toKill:
-		fmt.Println("Got signal", s)
-	default:
-		// go Pull()
-		// go mqtt.SubscribeAll(Push)
-		Serv()
-	}
+	Serve()
 }
 
-func initk() {
+func prepare() {
+	log.Println("Prepare resources")
+
 	pool, err = sql.Open("postgres", connStr)
 	failOnError(err, "unable to use data source name")
 	conn, err = amqp.Dial("amqp://guest:guest@localhost:5672/")
@@ -48,15 +41,22 @@ func initk() {
 	failOnError(err, "Failed to open a channel")
 }
 
-func tail() {
-	println("TAIL ...")
-	// pool.Close()
-	// conn.Close()
-	// ch.Close()
+func release() {
+	log.Println("Release resources")
+
+	if pool != nil {
+		pool.Close()
+	}
+	if conn != nil {
+		conn.Close()
+	}
+	if ch != nil {
+		ch.Close()
+	}
 }
 
-// Serv server
-func Serv() {
+// Serve server
+func Serve() {
 	router := gin.Default()
 	router.GET("/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{
