@@ -6,3 +6,4 @@
 * view port usage [sudo lsof -i -P -n | grep 5432] [sudo netstat -tanlp | grep 5432]
 * view container logs [docker logs -f postgres]
 * mosquitto publish a message [mosquitto_pub -t topic -m message]
+* docker execute local script [docker exec mosquitto sh -c "`cat mqtt_pub.sh`"]

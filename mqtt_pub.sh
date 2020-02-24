@@ -1,3 +1,4 @@
-mosquitto_pub -t "topic" -m "kkk"
-
-docker exec mosquitto sh -c "`cat mqtt_pub.sh`"
+for i in $(seq 1 5)
+do
+mosquitto_pub -t "topic" -m "message $i"
+done
