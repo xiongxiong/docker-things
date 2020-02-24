@@ -16,7 +16,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
-const connStr string = "postgres://guest:guest@localhost/thingspanel?sslmode=verify-full"
+const connStr string = "postgres://guest:guest@localhost/thingspanel?sslmode=disable"
 
 var err error
 var pool *sql.DB
@@ -27,20 +27,29 @@ func main() {
 	prepare()
 	defer release()
 
+	go mqtt.SubscribeAll(Push)
+	go Pull()
 	Serve()
 }
 
+// prepare resources
 func prepare() {
 	log.Println("Prepare resources")
 
 	pool, err = sql.Open("postgres", connStr)
 	failOnError(err, "unable to use data source name")
+	pool.SetConnMaxLifetime(0)
+	pool.SetMaxIdleConns(3)
+	pool.SetMaxOpenConns(3)
+
 	conn, err = amqp.Dial("amqp://guest:guest@localhost:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
+
 	ch, err = conn.Channel()
 	failOnError(err, "Failed to open a channel")
 }
 
+// release resources
 func release() {
 	log.Println("Release resources")
 
@@ -73,7 +82,7 @@ func Serve() {
 	})
 
 	srv := &http.Server{
-		Addr:    ":8080",
+		Addr:    ":3000",
 		Handler: router,
 	}
 	down := make(chan struct{})
@@ -128,13 +137,24 @@ func Pull() {
 	forever := make(chan bool)
 
 	go func() {
-		for d := range msgs {
-			log.Printf("Received a message: %s", d.Body)
+		for msg := range msgs {
+			log.Printf("Received a message: %s", msg.Body)
+			go PersistentMessage(string(msg.Body))
 		}
 	}()
 
 	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
 	<-forever
+}
+
+// PersistentMessage persistent message to database
+func PersistentMessage(message string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	println("the message -- " + message)
+	_, err := pool.ExecContext(ctx, `insert into message (message) values ($1);`, message)
+	failOnError(err, "unable to persistent message")
 }
 
 func failOnError(err error, msg string) {
