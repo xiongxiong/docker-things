@@ -1,32 +1,29 @@
 package main
 
-import (
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
-)
-
 func main() {
-	println("START")
-	quit := make(chan os.Signal)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	toQuit := false
-	for {
-		if toQuit {
-			break
-		}
-		tick := time.Tick(time.Second)
-		select {
-		case <-quit:
-			toQuit = true
-			println("END")
-			break
-		case <-tick:
-			println("---")
-		}
-	}
+	println("HELLO WORLD!")
 }
+
+// func main() {
+// 	println("START")
+// 	quit := make(chan os.Signal)
+// 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+// 	toQuit := false
+// 	for {
+// 		if toQuit {
+// 			break
+// 		}
+// 		tick := time.Tick(time.Second)
+// 		select {
+// 		case <-quit:
+// 			toQuit = true
+// 			println("END")
+// 			break
+// 		case <-tick:
+// 			println("---")
+// 		}
+// 	}
+// }
 
 // func main() {
 // 	x := 1
