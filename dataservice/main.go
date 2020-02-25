@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
-	"dataservice/mqtt"
+	"dataservice/connector/mqtt"
 	"log"
 	"net/http"
 	"os"
@@ -153,12 +153,18 @@ func PersistentMessage(message string) {
 	defer cancel()
 
 	println("the message -- " + message)
-	_, err := pool.ExecContext(ctx, `insert into message (message) values ($1);`, message)
-	failOnError(err, "unable to persistent message")
+	_, err := pool.ExecContext(ctx, `insert into message (msg) values ($1);`, message)
+	logOnError(err, "unable to persistent message")
 }
 
 func failOnError(err error, msg string) {
 	if err != nil {
 		log.Fatalf("%s: %s", msg, err)
+	}
+}
+
+func logOnError(err error, msg string) {
+	if err != nil {
+		log.Printf("%s: %s", msg, err)
 	}
 }
