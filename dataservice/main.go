@@ -42,7 +42,7 @@ func prepare() {
 	pool.SetMaxIdleConns(3)
 	pool.SetMaxOpenConns(3)
 
-	conn, err = amqp.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err = amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
 
 	ch, err = conn.Channel()

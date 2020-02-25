@@ -5,7 +5,7 @@
 # RUN go install -v ./...
 # CMD ["dataservice"]
 
-FROM golang:1.13
-WORKDIR /go/bin
-COPY dataservice .
-CMD ["dataservice"]
+FROM golang:alpine
+WORKDIR /home
+COPY bin/dataservice .
+ENTRYPOINT ["/home/dataservice"]

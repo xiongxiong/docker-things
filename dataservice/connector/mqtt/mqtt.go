@@ -12,7 +12,7 @@ type messageProcessor func(topic, message string)
 
 // SubscribeAll Subscribe all topic
 func SubscribeAll(msgProc messageProcessor) {
-	broker := flag.String("broker", "tcp://localhost:1883", "The broker URI. ex: tcp://localhost:1883")
+	broker := flag.String("broker", "tcp://mosquitto:1883", "The broker URI. ex: tcp://localhost:1883")
 
 	choke := make(chan MQTT.Message)
 
