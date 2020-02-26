@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"dataservice/connector/mqtt"
+	"dataservice/tool"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,88 +16,149 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
+	"github.com/spf13/viper"
 	"github.com/streadway/amqp"
 )
 
-const connStr string = "postgres://guest:guest@localhost/thingspanel?sslmode=disable"
-
-var err error
-var pool *sql.DB
-var conn *amqp.Connection
-var ch *amqp.Channel
+var serverPort string
+var pgConnStr string
+var pgPool *sql.DB
+var amqpConnStr string
+var amqpConn *amqp.Connection
+var amqpChan *amqp.Channel
 
 func main() {
+	config()
 	prepare()
 	defer release()
 
-	go mqtt.SubscribeAll(Push)
-	go Pull()
-	Serve()
+	go pull()
+	serve()
+}
+
+// read config
+func config() {
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+	if err := viper.ReadInConfig(); err != nil {
+		tool.PanicError(err, "fatal error of config file")
+	}
+
+	viper.SetDefault("server.port", "8000")
+	serverPort = viper.GetString("server.port")
+
+	viper.SetDefault("postgres.user", "guest")
+	viper.SetDefault("postgres.pass", "guest")
+	viper.SetDefault("postgres.host", "localhost")
+	viper.SetDefault("postgres.port", "5432")
+	viper.SetDefault("postgres.db", "thingspanel")
+	pgConnStr = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", viper.GetString("postgres.user"), viper.GetString("postgres.pass"), viper.GetString("postgres.host"), viper.GetString("postgres.port"), viper.GetString("postgres.db"))
+	log.Printf("config of postgres -- %s", pgConnStr)
+
+	viper.SetDefault("amqp.user", "guest")
+	viper.SetDefault("amqp.pass", "guest")
+	viper.SetDefault("amqp.host", "localhost")
+	viper.SetDefault("amqp.port", "5672")
+	amqpConnStr = fmt.Sprintf("amqp://%s:%s@%s:%s/", viper.GetString("amqp.user"), viper.GetString("amqp.pass"), viper.GetString("amqp.host"), viper.GetString("amqp.port"))
+	log.Printf("config of amqp -- %s", amqpConnStr)
 }
 
 // prepare resources
 func prepare() {
 	log.Println("Prepare resources")
 
-	pool, err = sql.Open("postgres", connStr)
-	failOnError(err, "unable to use data source name")
-	pool.SetConnMaxLifetime(0)
-	pool.SetMaxIdleConns(3)
-	pool.SetMaxOpenConns(3)
+	var err error
+	for i := 0; i < 3; i++ {
+		pgPool, err = sql.Open("postgres", pgConnStr)
+		if err != nil {
+			time.Sleep(3 * time.Second)
+		} else {
+			break
+		}
+	}
+	tool.PanicError(err, "unable to use data source name")
+	pgPool.SetConnMaxLifetime(0)
+	pgPool.SetMaxIdleConns(3)
+	pgPool.SetMaxOpenConns(3)
 
-	conn, err = amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
-	failOnError(err, "Failed to connect to RabbitMQ")
-
-	ch, err = conn.Channel()
-	failOnError(err, "Failed to open a channel")
+	for i := 0; i < 3; i++ {
+		amqpConn, err = amqp.Dial(amqpConnStr)
+		if err != nil {
+			time.Sleep(3 * time.Second)
+		} else {
+			break
+		}
+	}
+	tool.PanicError(err, "Failed to connect to RabbitMQ")
+	amqpChan, err = amqpConn.Channel()
+	tool.PanicError(err, "Failed to open a channel")
 }
 
 // release resources
 func release() {
 	log.Println("Release resources")
 
-	if pool != nil {
-		pool.Close()
+	if pgPool != nil {
+		pgPool.Close()
 	}
-	if conn != nil {
-		conn.Close()
+	if amqpConn != nil {
+		amqpConn.Close()
 	}
-	if ch != nil {
-		ch.Close()
+	if amqpChan != nil {
+		amqpChan.Close()
 	}
 }
 
-// Serve server
-func Serve() {
+// serve server
+func serve() {
 	router := gin.Default()
-	router.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "pong",
-		})
-	})
-	router.GET("/connect/mqtt/:broker/:topic", func(c *gin.Context) {
-		// broker := c.Param("broker")
-		// topic := c.Param("topic")
-		go mqtt.SubscribeAll(Push)
-		c.JSON(200, gin.H{
-			"message": "ok",
-		})
-	})
+	router.GET("/ping", ping)
+	router.GET("/connect/mqtt/:broker/:topic", connectMQTT)
 
 	srv := &http.Server{
-		Addr:    ":3000",
+		Addr:    fmt.Sprintf(":%s", serverPort),
 		Handler: router,
 	}
 	down := make(chan struct{})
 
 	go gracefullyShutdown(srv, down)
 
-	err = srv.ListenAndServe()
+	err := srv.ListenAndServe()
 	if http.ErrServerClosed != err {
 		log.Fatalf("Server not gracefully shutdown, err :%v\n", err)
 	}
 
 	<-down
+}
+
+func ping(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"message": "pong",
+	})
+}
+
+func connectMQTT(c *gin.Context) {
+	defer func() {
+		if err := tool.Error(recover()); err != nil {
+			c.JSON(200, gin.H{
+				"success": false,
+				"message": err.Error,
+			})
+		}
+	}()
+
+	broker, err := url.QueryUnescape(c.Param("broker"))
+	tool.PanicError(err, "connect mqtt invalid broker")
+	topic, err := url.QueryUnescape(c.Param("topic"))
+	tool.PanicError(err, "connect mqtt invalid topic")
+	err = mqtt.SubBrokerTopic(&broker, &topic, push)
+	tool.PanicError(err, "subscribe error")
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "success",
+	})
 }
 
 func gracefullyShutdown(srv *http.Server, down chan struct{}) {
@@ -113,33 +177,33 @@ func gracefullyShutdown(srv *http.Server, down chan struct{}) {
 	close(down)
 }
 
-// Push push message to message queue
-func Push(topic, message string) {
-	q, err := ch.QueueDeclare("hello", false, false, false, false, nil)
-	failOnError(err, "Failed to declare a queue")
+// push message to message queue
+func push(topic, message string) {
+	q, err := amqpChan.QueueDeclare("hello", false, false, false, false, nil)
+	tool.PanicError(err, "Failed to declare a queue")
 
-	err = ch.Publish("", q.Name, false, false, amqp.Publishing{
+	err = amqpChan.Publish("", q.Name, false, false, amqp.Publishing{
 		ContentType: "text/plain",
 		Body:        []byte(message),
 	})
 	log.Printf(" [x] Sent %s", message)
-	failOnError(err, "Failed to publish a message")
+	tool.PanicError(err, "Failed to publish a message")
 }
 
-// Pull pull and process message
-func Pull() {
-	q, err := ch.QueueDeclare("hello", false, false, false, false, nil)
-	failOnError(err, "Failed to declare a queue")
+// pull and process message
+func pull() {
+	q, err := amqpChan.QueueDeclare("hello", false, false, false, false, nil)
+	tool.PanicError(err, "Failed to declare a queue")
 
-	msgs, err := ch.Consume(q.Name, "", true, false, false, false, nil)
-	failOnError(err, "Failed to register a consumer")
+	msgs, err := amqpChan.Consume(q.Name, "", true, false, false, false, nil)
+	tool.PanicError(err, "Failed to register a consumer")
 
 	forever := make(chan bool)
 
 	go func() {
 		for msg := range msgs {
 			log.Printf("Received a message: %s", msg.Body)
-			go PersistentMessage(string(msg.Body))
+			go persistentMessage(string(msg.Body))
 		}
 	}()
 
@@ -147,24 +211,12 @@ func Pull() {
 	<-forever
 }
 
-// PersistentMessage persistent message to database
-func PersistentMessage(message string) {
+// persistentMessage persistent message to database
+func persistentMessage(message string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	println("the message -- " + message)
-	_, err := pool.ExecContext(ctx, `insert into message (msg) values ($1);`, message)
-	logOnError(err, "unable to persistent message")
-}
-
-func failOnError(err error, msg string) {
-	if err != nil {
-		log.Fatalf("%s: %s", msg, err)
-	}
-}
-
-func logOnError(err error, msg string) {
-	if err != nil {
-		log.Printf("%s: %s", msg, err)
-	}
+	_, err := pgPool.ExecContext(ctx, `insert into message (msg) values ($1);`, message)
+	tool.PrintError(err, "unable to persistent message")
 }

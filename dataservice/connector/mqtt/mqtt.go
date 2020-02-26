@@ -1,18 +1,19 @@
 package mqtt
 
 import (
-	"flag"
-	"fmt"
-	"os"
+	"dataservice/tool"
+	"log"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
 type messageProcessor func(topic, message string)
 
-// SubscribeAll Subscribe all topic
-func SubscribeAll(msgProc messageProcessor) {
-	broker := flag.String("broker", "tcp://mosquitto:1883", "The broker URI. ex: tcp://localhost:1883")
+// SubBrokerTopic Subscribe broker topic
+func SubBrokerTopic(broker, topic *string, msgProc messageProcessor) (err error) {
+	defer func() {
+		err = tool.Error(recover())
+	}()
 
 	choke := make(chan MQTT.Message)
 
@@ -26,16 +27,19 @@ func SubscribeAll(msgProc messageProcessor) {
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
-	if token := client.Subscribe("#", byte(0), nil); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-		os.Exit(1)
+	if token := client.Subscribe(*topic, byte(0), nil); token.Wait() && token.Error() != nil {
+		panic(token.Error())
 	}
-	fmt.Println("Server started.")
+	log.Printf("Sub broker success -- %s", *broker)
 
-	for {
-		msg := <-choke
-		topic, payload := msg.Topic(), (string(msg.Payload()))
-		fmt.Printf("RECEIVED TOPIC: %s MESSAGE: %s\n", topic, payload)
-		msgProc(topic, payload)
-	}
+	go func() {
+		for {
+			msg := <-choke
+			topic, payload := msg.Topic(), (string(msg.Payload()))
+			log.Printf("Received topic: %s, message: %s\n", topic, payload)
+			msgProc(topic, payload)
+		}
+	}()
+
+	return
 }

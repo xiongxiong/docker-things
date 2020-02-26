@@ -1,7 +1,27 @@
 package main
 
+import (
+	"log"
+	"time"
+)
+
+// func main() {
+// 	println("HELLO WORLD!")
+// }
+
 func main() {
-	println("HELLO WORLD!")
+	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Println(err)
+			}
+			println("defer ...")
+		}()
+		println("doing ...")
+		panic("error ...")
+	}()
+	time.Sleep(2 * time.Second)
+	println("done ...")
 }
 
 // func main() {
