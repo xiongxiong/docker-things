@@ -7,6 +7,10 @@ import (
 
 // Error get error from any interface{}
 func Error(x interface{}) (err error) {
+	if x == nil {
+		return
+	}
+
 	if er, ok := x.(error); ok {
 		err = er
 	} else {
@@ -18,13 +22,13 @@ func Error(x interface{}) (err error) {
 // PanicError check error and panic
 func PanicError(err error, msg string) {
 	if err != nil {
-		panic(fmt.Errorf("%s: %s", msg, err))
+		panic(fmt.Errorf("%s -- %s", msg, err))
 	}
 }
 
 // PrintError check error and print
 func PrintError(err error, msg string) {
 	if err != nil {
-		log.Printf("%s: %s", msg, err)
+		log.Printf("%s -- %s", msg, err)
 	}
 }

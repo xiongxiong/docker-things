@@ -7,5 +7,6 @@
 
 FROM golang:alpine
 WORKDIR /home
+COPY config/config.yml .
 COPY bin/dataservice .
 ENTRYPOINT ["/home/dataservice"]

@@ -1,28 +1,31 @@
 package main
 
-import (
-	"log"
-	"time"
-)
+import "encoding/base64"
 
 // func main() {
 // 	println("HELLO WORLD!")
 // }
 
 func main() {
-	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Println(err)
-			}
-			println("defer ...")
-		}()
-		println("doing ...")
-		panic("error ...")
-	}()
-	time.Sleep(2 * time.Second)
-	println("done ...")
+	println(base64.StdEncoding.EncodeToString([]byte("tcp://localhost:1883")))
+	println(base64.StdEncoding.EncodeToString([]byte("#")))
 }
+
+// func main() {
+// 	go func() {
+// 		defer func() {
+// 			if err := recover(); err != nil {
+// 				// log.Println(err)
+// 				log.Printf("%#v", err)
+// 			}
+// 			println("defer ...")
+// 		}()
+// 		println("doing ...")
+// 		panic("error ...")
+// 	}()
+// 	time.Sleep(2 * time.Second)
+// 	println("done ...")
+// }
 
 // func main() {
 // 	println("START")

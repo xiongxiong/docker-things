@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"dataservice/connector/mqtt"
 	"dataservice/tool"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -42,11 +42,12 @@ func config() {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	if err := viper.ReadInConfig(); err != nil {
-		tool.PanicError(err, "fatal error of config file")
+		tool.PrintError(err, "fatal error of config file, use default setting")
 	}
 
 	viper.SetDefault("server.port", "8000")
 	serverPort = viper.GetString("server.port")
+	log.Printf("config of server port -- %s", serverPort)
 
 	viper.SetDefault("postgres.user", "guest")
 	viper.SetDefault("postgres.pass", "guest")
@@ -72,6 +73,7 @@ func prepare() {
 	for i := 0; i < 3; i++ {
 		pgPool, err = sql.Open("postgres", pgConnStr)
 		if err != nil {
+			log.Println("open postgres failure, retry after 3 seconds")
 			time.Sleep(3 * time.Second)
 		} else {
 			break
@@ -85,14 +87,15 @@ func prepare() {
 	for i := 0; i < 3; i++ {
 		amqpConn, err = amqp.Dial(amqpConnStr)
 		if err != nil {
+			log.Println("open rabbitmq failure, retry after 3 seconds")
 			time.Sleep(3 * time.Second)
 		} else {
 			break
 		}
 	}
-	tool.PanicError(err, "Failed to connect to RabbitMQ")
+	tool.PanicError(err, "unable to connect to rabbitmq")
 	amqpChan, err = amqpConn.Channel()
-	tool.PanicError(err, "Failed to open a channel")
+	tool.PanicError(err, "unable to open a channel")
 }
 
 // release resources
@@ -141,18 +144,19 @@ func ping(c *gin.Context) {
 func connectMQTT(c *gin.Context) {
 	defer func() {
 		if err := tool.Error(recover()); err != nil {
+			log.Println(err.Error())
 			c.JSON(200, gin.H{
 				"success": false,
-				"message": err.Error,
+				"message": err.Error(),
 			})
 		}
 	}()
 
-	broker, err := url.QueryUnescape(c.Param("broker"))
+	broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
 	tool.PanicError(err, "connect mqtt invalid broker")
-	topic, err := url.QueryUnescape(c.Param("topic"))
+	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
 	tool.PanicError(err, "connect mqtt invalid topic")
-	err = mqtt.SubBrokerTopic(&broker, &topic, push)
+	err = mqtt.SubBrokerTopic(string(broker), string(topic), push)
 	tool.PanicError(err, "subscribe error")
 
 	c.JSON(200, gin.H{

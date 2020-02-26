@@ -10,7 +10,7 @@ import (
 type messageProcessor func(topic, message string)
 
 // SubBrokerTopic Subscribe broker topic
-func SubBrokerTopic(broker, topic *string, msgProc messageProcessor) (err error) {
+func SubBrokerTopic(broker, topic string, msgProc messageProcessor) (err error) {
 	defer func() {
 		err = tool.Error(recover())
 	}()
@@ -18,7 +18,7 @@ func SubBrokerTopic(broker, topic *string, msgProc messageProcessor) (err error)
 	choke := make(chan MQTT.Message)
 
 	opts := MQTT.NewClientOptions()
-	opts.AddBroker(*broker)
+	opts.AddBroker(broker)
 	opts.SetDefaultPublishHandler(func(client MQTT.Client, msg MQTT.Message) {
 		choke <- msg
 	})
@@ -27,10 +27,10 @@ func SubBrokerTopic(broker, topic *string, msgProc messageProcessor) (err error)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
-	if token := client.Subscribe(*topic, byte(0), nil); token.Wait() && token.Error() != nil {
+	if token := client.Subscribe(topic, byte(0), nil); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
-	log.Printf("Sub broker success -- %s", *broker)
+	log.Printf("Sub broker success -- %s", broker)
 
 	go func() {
 		for {
