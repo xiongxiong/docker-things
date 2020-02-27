@@ -1,15 +1,29 @@
 package main
 
-import "encoding/base64"
+type res struct{}
+
+var _res res
+
+func (*res) hello() {
+	println("hello")
+}
+
+func do(some func()) {
+	some()
+}
+
+func main() {
+	do((&_res).hello)
+}
 
 // func main() {
 // 	println("HELLO WORLD!")
 // }
 
-func main() {
-	println(base64.StdEncoding.EncodeToString([]byte("tcp://localhost:1883")))
-	println(base64.StdEncoding.EncodeToString([]byte("#")))
-}
+// func main() {
+// 	println(base64.StdEncoding.EncodeToString([]byte("tcp://localhost:1883")))
+// 	println(base64.StdEncoding.EncodeToString([]byte("#")))
+// }
 
 // func main() {
 // 	go func() {
