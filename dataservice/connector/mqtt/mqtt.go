@@ -30,7 +30,7 @@ func SubBrokerTopic(broker, topic string, msgProc messageProcessor) (err error) 
 	if token := client.Subscribe(topic, byte(0), nil); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
-	log.Printf("Sub broker success -- %s", broker)
+	log.Printf("subscribe broker success -- %s", broker)
 
 	go func() {
 		for {

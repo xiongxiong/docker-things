@@ -61,7 +61,7 @@ services:
         container_name: dataservice
         image: wonderbear/thingspanel-dataservice:v1
         ports: 
-            - 3000:3000
+            - 8000:8000
         networks: 
             - backend
         depends_on: 
