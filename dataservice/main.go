@@ -70,7 +70,7 @@ func prepare() {
 	log.Println("Prepare resources")
 
 	var err error
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 10; i++ {
 		pgPool, err = sql.Open("postgres", pgConnStr)
 		if err != nil {
 			log.Println("open postgres failure, retry after 3 seconds")
@@ -84,7 +84,7 @@ func prepare() {
 	pgPool.SetMaxIdleConns(3)
 	pgPool.SetMaxOpenConns(3)
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 10; i++ {
 		amqpConn, err = amqp.Dial(amqpConnStr)
 		if err != nil {
 			log.Println("open rabbitmq failure, retry after 3 seconds")
