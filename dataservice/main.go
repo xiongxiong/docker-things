@@ -42,7 +42,7 @@ func config() {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	if err := viper.ReadInConfig(); err != nil {
-		tool.PrintError(err, "fatal error of config file, use default setting")
+		tool.CheckThenPrint(err, "read config file")
 	}
 
 	viper.SetDefault("server.port", "8000")
@@ -79,7 +79,7 @@ func prepare() {
 			break
 		}
 	}
-	tool.PanicError(err, "unable to use data source name")
+	tool.CheckThenPanic(err, "use data source")
 	pgPool.SetConnMaxLifetime(0)
 	pgPool.SetMaxIdleConns(3)
 	pgPool.SetMaxOpenConns(3)
@@ -93,9 +93,9 @@ func prepare() {
 			break
 		}
 	}
-	tool.PanicError(err, "unable to connect to rabbitmq")
+	tool.CheckThenPanic(err, "connect to rabbitmq")
 	amqpChan, err = amqpConn.Channel()
-	tool.PanicError(err, "unable to open a channel")
+	tool.CheckThenPanic(err, "open a channel")
 }
 
 // release resources
@@ -153,11 +153,11 @@ func connectMQTT(c *gin.Context) {
 	}()
 
 	broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
-	tool.PanicError(err, "connect mqtt invalid broker")
+	tool.CheckThenPanic(err, "connect mqtt broker")
 	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
-	tool.PanicError(err, "connect mqtt invalid topic")
+	tool.CheckThenPanic(err, "connect mqtt topic")
 	err = mqtt.SubBrokerTopic(string(broker), string(topic), push)
-	tool.PanicError(err, "subscribe error")
+	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
 		"success": true,
@@ -184,23 +184,23 @@ func gracefullyShutdown(srv *http.Server, down chan struct{}) {
 // push message to message queue
 func push(topic, message string) {
 	q, err := amqpChan.QueueDeclare("hello", false, false, false, false, nil)
-	tool.PanicError(err, "Failed to declare a queue")
+	tool.CheckThenPanic(err, "declare a queue")
 
 	err = amqpChan.Publish("", q.Name, false, false, amqp.Publishing{
 		ContentType: "text/plain",
 		Body:        []byte(message),
 	})
 	log.Printf(" [x] Sent %s", message)
-	tool.PanicError(err, "Failed to publish a message")
+	tool.CheckThenPanic(err, "publish a message")
 }
 
 // pull and process message
 func pull() {
 	q, err := amqpChan.QueueDeclare("hello", false, false, false, false, nil)
-	tool.PanicError(err, "Failed to declare a queue")
+	tool.CheckThenPanic(err, "declare a queue")
 
 	msgs, err := amqpChan.Consume(q.Name, "", true, false, false, false, nil)
-	tool.PanicError(err, "Failed to register a consumer")
+	tool.CheckThenPanic(err, "register a consumer")
 
 	forever := make(chan bool)
 
@@ -222,5 +222,5 @@ func persistentMessage(message string) {
 
 	println("the message -- " + message)
 	_, err := pgPool.ExecContext(ctx, `insert into message (msg) values ($1);`, message)
-	tool.PrintError(err, "unable to persistent message")
+	tool.CheckThenPrint(err, "persistent message")
 }
