@@ -21,52 +21,52 @@ services:
         networks: 
             - backend
 
-    rabbitmq:
-        container_name: rabbitmq
-        image: rabbitmq:3-management
-        ports: 
-            - 5672:5672
-            - 15672:15672
-        networks:
-            - backend
-        environment: 
-            RABBITMQ_DEFAULT_USER: guest
-            RABBITMQ_DEFAULT_PASS: guest
+    # rabbitmq:
+    #     container_name: rabbitmq
+    #     image: rabbitmq:3-management
+    #     ports: 
+    #         - 5672:5672
+    #         - 15672:15672
+    #     networks:
+    #         - backend
+    #     environment: 
+    #         RABBITMQ_DEFAULT_USER: guest
+    #         RABBITMQ_DEFAULT_PASS: guest
 
-    postgres:
-        container_name: postgres
-        image: wonderbear/thingspanel-postgres:v1
-        restart: always
-        ports: 
-            - 5432:5432
-        networks:
-            - backend
-        environment: 
-            POSTGRES_USER: guest
-            POSTGRES_PASSWORD: guest
-            POSTGRES_DB: thingspanel
+    # postgres:
+    #     container_name: postgres
+    #     image: wonderbear/thingspanel-postgres:v1
+    #     restart: always
+    #     ports: 
+    #         - 5432:5432
+    #     networks:
+    #         - backend
+    #     environment: 
+    #         POSTGRES_USER: guest
+    #         POSTGRES_PASSWORD: guest
+    #         POSTGRES_DB: thingspanel
 
-    postgres-admin:
-        container_name: postgres-admin
-        image: adminer
-        restart: always
-        ports:
-            - 8080:8080
-        networks: 
-            - backend
-        environment: 
-            ADMINER_DEFAULT_SERVER: postgres
+    # postgres-admin:
+    #     container_name: postgres-admin
+    #     image: adminer
+    #     restart: always
+    #     ports:
+    #         - 8080:8080
+    #     networks: 
+    #         - backend
+    #     environment: 
+    #         ADMINER_DEFAULT_SERVER: postgres
 
-    dataservice:
-        container_name: dataservice
-        image: wonderbear/thingspanel-dataservice:v1
-        ports: 
-            - 8000:8000
-        networks: 
-            - backend
-        depends_on: 
-            - rabbitmq
-            - postgres
+    # dataservice:
+    #     container_name: dataservice
+    #     image: wonderbear/thingspanel-dataservice:v1
+    #     ports: 
+    #         - 8000:8000
+    #     networks: 
+    #         - backend
+    #     depends_on: 
+    #         - rabbitmq
+    #         - postgres
 
 networks: 
     backend:

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"container/list"
 	"context"
 	"database/sql"
 	"dataservice/connector/mqtt"
@@ -42,8 +43,7 @@ var _global global
 
 func main() {
 	_global.readConfig()
-	_global.initResource()
-	defer _global.freeResource()
+	defer _global.initResource()()
 
 	go _global.pull()
 	_global.serve()
@@ -79,10 +79,12 @@ func (glob *global) readConfig() {
 }
 
 // init resources
-func (glob *global) initResource() {
+func (glob *global) initResource() (freeFunc func()) {
 	log.Println("Prepare resources")
 
 	var err error
+	var freeSteps list.List
+
 	for i := 0; i < 10; i++ {
 		glob.pgPool, err = sql.Open("postgres", glob.pgConnStr)
 		if err != nil {
@@ -93,6 +95,11 @@ func (glob *global) initResource() {
 		}
 	}
 	tool.CheckThenPanic(err, "open data source")
+	freeSteps.PushBack(func() {
+		if glob.amqpChan != nil {
+			tool.CheckThenPrint(glob.amqpChan.Close(), "close amqp channel")
+		}
+	})
 	glob.pgPool.SetConnMaxLifetime(0)
 	glob.pgPool.SetMaxIdleConns(3)
 	glob.pgPool.SetMaxOpenConns(3)
@@ -107,22 +114,27 @@ func (glob *global) initResource() {
 		}
 	}
 	tool.CheckThenPanic(err, "connect amqp")
+	freeSteps.PushBack(func() {
+		if glob.amqpConn != nil {
+			tool.CheckThenPrint(glob.amqpConn.Close(), "close amqp connection")
+		}
+	})
 	glob.amqpChan, err = glob.amqpConn.Channel()
 	tool.CheckThenPanic(err, "open a channel")
-}
+	freeSteps.PushBack(func() {
+		if glob.pgPool != nil {
+			tool.CheckThenPrint(glob.pgPool.Close(), "close data source")
+		}
+	})
 
-// free resources
-func (glob *global) freeResource() {
-	log.Println("Release resources")
+	return func() {
+		log.Println("Release resources")
 
-	if glob.amqpChan != nil {
-		tool.CheckThenPrint(glob.amqpChan.Close(), "close amqp channel")
-	}
-	if glob.amqpConn != nil {
-		tool.CheckThenPrint(glob.amqpConn.Close(), "close amqp connection")
-	}
-	if glob.pgPool != nil {
-		tool.CheckThenPrint(glob.pgPool.Close(), "close data source")
+		for freeStep := freeSteps.Back(); freeStep != nil; freeStep = freeStep.Prev() {
+			if fc, ok := freeStep.Value.(func()); ok {
+				fc()
+			}
+		}
 	}
 }
 
