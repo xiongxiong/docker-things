@@ -39,18 +39,18 @@ type global struct {
 	resource
 }
 
-var _global global
+var _Global global
 
 func main() {
-	_global.readConfig()
-	defer _global.initResource()()
+	_Global.readConfig()
+	defer _Global.initResource()()
 
-	go _global.pull()
-	_global.serve()
+	go _Global.pull()
+	_Global.serve()
 }
 
 // read config
-func (glob *global) readConfig() {
+func (_global *global) readConfig() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
@@ -59,34 +59,34 @@ func (glob *global) readConfig() {
 	}
 
 	viper.SetDefault("server.port", "8000")
-	glob.serverPort = viper.GetString("server.port")
-	log.Printf("config of server port -- %s", glob.serverPort)
+	_global.serverPort = viper.GetString("server.port")
+	log.Printf("config of server port -- %s", _global.serverPort)
 
 	viper.SetDefault("postgres.user", "guest")
 	viper.SetDefault("postgres.pass", "guest")
 	viper.SetDefault("postgres.host", "localhost")
 	viper.SetDefault("postgres.port", "5432")
 	viper.SetDefault("postgres.db", "thingspanel")
-	glob.pgConnStr = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", viper.GetString("postgres.user"), viper.GetString("postgres.pass"), viper.GetString("postgres.host"), viper.GetString("postgres.port"), viper.GetString("postgres.db"))
-	log.Printf("config of postgres -- %s", glob.pgConnStr)
+	_global.pgConnStr = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", viper.GetString("postgres.user"), viper.GetString("postgres.pass"), viper.GetString("postgres.host"), viper.GetString("postgres.port"), viper.GetString("postgres.db"))
+	log.Printf("config of postgres -- %s", _global.pgConnStr)
 
 	viper.SetDefault("amqp.user", "guest")
 	viper.SetDefault("amqp.pass", "guest")
 	viper.SetDefault("amqp.host", "localhost")
 	viper.SetDefault("amqp.port", "5672")
-	glob.amqpConnStr = fmt.Sprintf("amqp://%s:%s@%s:%s/", viper.GetString("amqp.user"), viper.GetString("amqp.pass"), viper.GetString("amqp.host"), viper.GetString("amqp.port"))
-	log.Printf("config of amqp -- %s", glob.amqpConnStr)
+	_global.amqpConnStr = fmt.Sprintf("amqp://%s:%s@%s:%s/", viper.GetString("amqp.user"), viper.GetString("amqp.pass"), viper.GetString("amqp.host"), viper.GetString("amqp.port"))
+	log.Printf("config of amqp -- %s", _global.amqpConnStr)
 }
 
 // init resources
-func (glob *global) initResource() (freeFunc func()) {
+func (_global *global) initResource() (freeFunc func()) {
 	log.Println("Prepare resources")
 
 	var err error
 	var freeSteps list.List
 
 	for i := 0; i < 10; i++ {
-		glob.pgPool, err = sql.Open("postgres", glob.pgConnStr)
+		_global.pgPool, err = sql.Open("postgres", _global.pgConnStr)
 		if err != nil {
 			log.Println("open postgres failure, retry after 3 seconds")
 			time.Sleep(3 * time.Second)
@@ -96,16 +96,16 @@ func (glob *global) initResource() (freeFunc func()) {
 	}
 	tool.CheckThenPanic(err, "open data source")
 	freeSteps.PushBack(func() {
-		if glob.amqpChan != nil {
-			tool.CheckThenPrint(glob.amqpChan.Close(), "close amqp channel")
+		if _global.amqpChan != nil {
+			tool.CheckThenPrint(_global.amqpChan.Close(), "close amqp channel")
 		}
 	})
-	glob.pgPool.SetConnMaxLifetime(0)
-	glob.pgPool.SetMaxIdleConns(3)
-	glob.pgPool.SetMaxOpenConns(3)
+	_global.pgPool.SetConnMaxLifetime(0)
+	_global.pgPool.SetMaxIdleConns(3)
+	_global.pgPool.SetMaxOpenConns(3)
 
 	for i := 0; i < 10; i++ {
-		glob.amqpConn, err = amqp.Dial(glob.amqpConnStr)
+		_global.amqpConn, err = amqp.Dial(_global.amqpConnStr)
 		if err != nil {
 			log.Println("open rabbitmq failure, retry after 3 seconds")
 			time.Sleep(3 * time.Second)
@@ -115,15 +115,15 @@ func (glob *global) initResource() (freeFunc func()) {
 	}
 	tool.CheckThenPanic(err, "connect amqp")
 	freeSteps.PushBack(func() {
-		if glob.amqpConn != nil {
-			tool.CheckThenPrint(glob.amqpConn.Close(), "close amqp connection")
+		if _global.amqpConn != nil {
+			tool.CheckThenPrint(_global.amqpConn.Close(), "close amqp connection")
 		}
 	})
-	glob.amqpChan, err = glob.amqpConn.Channel()
+	_global.amqpChan, err = _global.amqpConn.Channel()
 	tool.CheckThenPanic(err, "open a channel")
 	freeSteps.PushBack(func() {
-		if glob.pgPool != nil {
-			tool.CheckThenPrint(glob.pgPool.Close(), "close data source")
+		if _global.pgPool != nil {
+			tool.CheckThenPrint(_global.pgPool.Close(), "close data source")
 		}
 	})
 
@@ -139,13 +139,13 @@ func (glob *global) initResource() (freeFunc func()) {
 }
 
 // serve server
-func (glob *global) serve() {
+func (_global *global) serve() {
 	router := gin.Default()
 	router.GET("/ping", ping)
-	router.GET("/connect/mqtt/:broker/:topic", glob.connectMQTT)
+	router.GET("/connect/mqtt/:broker/:topic", _global.connectMQTT)
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", glob.serverPort),
+		Addr:    fmt.Sprintf(":%s", _global.serverPort),
 		Handler: router,
 	}
 	down := make(chan struct{})
@@ -166,7 +166,7 @@ func ping(c *gin.Context) {
 	})
 }
 
-func (glob *global) connectMQTT(c *gin.Context) {
+func (_global *global) connectMQTT(c *gin.Context) {
 	defer func() {
 		if err := tool.Error(recover()); err != nil {
 			log.Println(err.Error())
@@ -181,7 +181,7 @@ func (glob *global) connectMQTT(c *gin.Context) {
 	tool.CheckThenPanic(err, "connect mqtt broker")
 	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
 	tool.CheckThenPanic(err, "connect mqtt topic")
-	err = mqtt.SubBrokerTopic(string(broker), string(topic), glob.push)
+	err = mqtt.SubBrokerTopic(string(broker), string(topic), _global.push)
 	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
@@ -207,11 +207,11 @@ func gracefullyShutdown(srv *http.Server, down chan struct{}) {
 }
 
 // push message to message queue
-func (glob *global) push(topic, message string) {
-	q, err := glob.amqpChan.QueueDeclare("hello", false, false, false, false, nil)
+func (_global *global) push(topic, message string) {
+	q, err := _global.amqpChan.QueueDeclare("hello", false, false, false, false, nil)
 	tool.CheckThenPanic(err, "declare a queue")
 
-	err = glob.amqpChan.Publish("", q.Name, false, false, amqp.Publishing{
+	err = _global.amqpChan.Publish("", q.Name, false, false, amqp.Publishing{
 		ContentType: "text/plain",
 		Body:        []byte(message),
 	})
@@ -220,11 +220,11 @@ func (glob *global) push(topic, message string) {
 }
 
 // pull and process message
-func (glob *global) pull() {
-	q, err := glob.amqpChan.QueueDeclare("hello", false, false, false, false, nil)
+func (_global *global) pull() {
+	q, err := _global.amqpChan.QueueDeclare("hello", false, false, false, false, nil)
 	tool.CheckThenPanic(err, "declare a queue")
 
-	msgs, err := glob.amqpChan.Consume(q.Name, "", true, false, false, false, nil)
+	msgs, err := _global.amqpChan.Consume(q.Name, "", true, false, false, false, nil)
 	tool.CheckThenPanic(err, "register a consumer")
 
 	forever := make(chan bool)
@@ -232,7 +232,7 @@ func (glob *global) pull() {
 	go func() {
 		for msg := range msgs {
 			log.Printf("Received a message: %s", msg.Body)
-			go glob.persistentMessage(string(msg.Body))
+			go _global.persistentMessage(string(msg.Body))
 		}
 	}()
 
@@ -241,11 +241,11 @@ func (glob *global) pull() {
 }
 
 // persistentMessage persistent message to database
-func (glob *global) persistentMessage(message string) {
+func (_global *global) persistentMessage(message string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	println("the message -- " + message)
-	_, err := glob.pgPool.ExecContext(ctx, `insert into message (msg) values ($1);`, message)
+	_, err := _global.pgPool.ExecContext(ctx, `insert into message (msg) values ($1);`, message)
 	tool.CheckThenPrint(err, "persistent message")
 }

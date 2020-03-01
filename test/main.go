@@ -1,18 +1,17 @@
 package main
 
-import (
-	"log"
-	"os/exec"
-)
-
 func main() {
-	mosStart := exec.Command("sh", "-c", "docker run -d --rm --name mosquitto eclipse-mosquitto")
-	if err := mosStart.Run(); err != nil {
-		log.Println(err.Error())
-	} else {
-		log.Println("docker start success")
-	}
+
 }
+
+// func main() {
+// 	mosStart := exec.Command("sh", "-c", "docker run -d --rm --name mosquitto eclipse-mosquitto")
+// 	if err := mosStart.Run(); err != nil {
+// 		log.Println(err.Error())
+// 	} else {
+// 		log.Println("docker start success")
+// 	}
+// }
 
 // type zaka struct{}
 
