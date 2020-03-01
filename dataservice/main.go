@@ -142,7 +142,7 @@ func (_global *global) initResource() (freeFunc func()) {
 func (_global *global) serve() {
 	router := gin.Default()
 	router.GET("/ping", ping)
-	router.GET("/connect/mqtt/:broker/:topic", _global.connectMQTT)
+	router.GET("/connect/mqtt/:broker/:topic", _global.mqttSubscribe)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", _global.serverPort),
@@ -166,7 +166,7 @@ func ping(c *gin.Context) {
 	})
 }
 
-func (_global *global) connectMQTT(c *gin.Context) {
+func (_global *global) mqttSubscribe(c *gin.Context) {
 	defer func() {
 		if err := tool.Error(recover()); err != nil {
 			log.Println(err.Error())
@@ -182,6 +182,30 @@ func (_global *global) connectMQTT(c *gin.Context) {
 	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
 	tool.CheckThenPanic(err, "connect mqtt topic")
 	err = mqtt.SubBrokerTopic(string(broker), string(topic), _global.push)
+	tool.CheckThenPanic(err, "subscribe")
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "success",
+	})
+}
+
+func (_global *global) mqttUnSubscribe(c *gin.Context) {
+	defer func() {
+		if err := tool.Error(recover()); err != nil {
+			log.Println(err.Error())
+			c.JSON(200, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+		}
+	}()
+
+	broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
+	tool.CheckThenPanic(err, "connect mqtt broker")
+	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
+	tool.CheckThenPanic(err, "connect mqtt topic")
+	err = mqtt.UnSubBrokerTopic(string(broker), string(topic))
 	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
