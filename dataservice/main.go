@@ -42,15 +42,16 @@ type global struct {
 var _Global global
 
 func main() {
-	_Global.readConfig()
+	_Global.loadConfig()
 	defer _Global.initResource()()
+	_Global.loadData()
 
 	go _Global.pull()
 	_Global.serve()
 }
 
 // read config
-func (_global *global) readConfig() {
+func (_global *global) loadConfig() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
@@ -76,6 +77,14 @@ func (_global *global) readConfig() {
 	viper.SetDefault("amqp.port", "5672")
 	_global.amqpConnStr = fmt.Sprintf("amqp://%s:%s@%s:%s/", viper.GetString("amqp.user"), viper.GetString("amqp.pass"), viper.GetString("amqp.host"), viper.GetString("amqp.port"))
 	log.Printf("config of amqp -- %s", _global.amqpConnStr)
+}
+
+func (_global *global) loadData() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// _, err := _global.pgPool.ExecContext(ctx, `insert into messages (msg) values ($1);`, message)
+	// tool.CheckThenPrint(err, "persistent message")
 }
 
 // init resources
@@ -201,11 +210,7 @@ func (_global *global) mqttUnSubscribe(c *gin.Context) {
 		}
 	}()
 
-	broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
-	tool.CheckThenPanic(err, "connect mqtt broker")
-	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
-	tool.CheckThenPanic(err, "connect mqtt topic")
-	err = mqtt.UnSubBrokerTopic(string(broker), string(topic))
+	err = mqtt.UnSubBrokerTopic(c.Param("broker"), c.Param("topic"))
 	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
@@ -269,7 +274,7 @@ func (_global *global) persistentMessage(message string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	println("the message -- " + message)
-	_, err := _global.pgPool.ExecContext(ctx, `insert into message (msg) values ($1);`, message)
+	log.Println("the message -- " + message)
+	_, err := _global.pgPool.ExecContext(ctx, `insert into messages (msg) values ($1);`, message)
 	tool.CheckThenPrint(err, "persistent message")
 }

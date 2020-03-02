@@ -11,10 +11,18 @@ import (
 
 type messageProcessor func(topic, message string)
 
+type brokerKey struct {
+	broker   string
+	username string
+}
+
 type broker struct {
 	sync.RWMutex
-	client   mqtt.Client
+	username string
+	password string
+	broker   string
 	mapTopic map[string]*struct{}
+	client   mqtt.Client
 	chQuit   chan struct{}
 	chMsg    chan mqtt.Message
 }
@@ -92,16 +100,21 @@ func (_broker *broker) delTopic(topic string) {
 }
 
 // SubBrokerTopic Subscribe broker topic
-func SubBrokerTopic(brok, topic string, msgProc messageProcessor) (err error) {
-	return _Global.subBrokerTopic(brok, topic, msgProc)
+func SubBrokerTopic(user, pass, brok, topic string, msgProc messageProcessor) (err error) {
+	return _Global.subBrokerTopic(user, pass, brok, topic, msgProc)
 }
 
-func (_global *global) subBrokerTopic(brok, topic string, msgProc messageProcessor) (err error) {
+func (_global *global) subBrokerTopic(user, pass, brok, topic string, msgProc messageProcessor) (err error) {
 	defer func() {
 		err = tool.Error(recover())
 	}()
 
 	_broker := _global.addBroker(brok)
+
+	// broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
+	// tool.CheckThenPanic(err, "connect mqtt broker")
+	// topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
+	// tool.CheckThenPanic(err, "connect mqtt topic")
 
 	if _broker.client.IsConnected() == false {
 		if token := _broker.client.Connect(); token.Wait() {
