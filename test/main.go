@@ -4,6 +4,19 @@ func main() {
 
 }
 
+// type oo struct {
+// 	name string
+// 	cc   map[int]int
+// }
+
+// func main() {
+// 	o1 := oo{"hello", map[int]int{1: 1, 2: 2}}
+// 	o2 := oo{"hello", map[int]int{1: 1, 2: 2}}
+// 	if o1 == o2 {
+// 		println("hello")
+// 	}
+// }
+
 // func main() {
 // 	mosStart := exec.Command("sh", "-c", "docker run -d --rm --name mosquitto eclipse-mosquitto")
 // 	if err := mosStart.Run(); err != nil {

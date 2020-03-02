@@ -180,7 +180,7 @@ func (_global *global) mqttSubscribe(c *gin.Context) {
 		if err := tool.Error(recover()); err != nil {
 			log.Println(err.Error())
 			c.JSON(200, gin.H{
-				"success": false,
+				"code":    "no",
 				"message": err.Error(),
 			})
 		}
@@ -194,7 +194,7 @@ func (_global *global) mqttSubscribe(c *gin.Context) {
 	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
-		"success": true,
+		"code":    "ok",
 		"message": "success",
 	})
 }
@@ -204,17 +204,21 @@ func (_global *global) mqttUnSubscribe(c *gin.Context) {
 		if err := tool.Error(recover()); err != nil {
 			log.Println(err.Error())
 			c.JSON(200, gin.H{
-				"success": false,
+				"code":    "no",
 				"message": err.Error(),
 			})
 		}
 	}()
 
+	broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
+	tool.CheckThenPanic(err, "connect mqtt broker")
+	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
+	tool.CheckThenPanic(err, "connect mqtt topic")
 	err = mqtt.UnSubBrokerTopic(c.Param("broker"), c.Param("topic"))
 	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
-		"success": true,
+		"code":    "ok",
 		"message": "success",
 	})
 }
@@ -223,15 +227,15 @@ func gracefullyShutdown(srv *http.Server, down chan struct{}) {
 	quit := make(chan os.Signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutdown server ...")
+	log.Println("shutdown server ...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("Server shutdown: ", err)
+		tool.CheckThenPanic(err, "server shutdown")
 	}
 
-	log.Println("Server gracefully shutdown")
+	log.Println("server gracefully shutdown")
 	close(down)
 }
 
@@ -260,12 +264,12 @@ func (_global *global) pull() {
 
 	go func() {
 		for msg := range msgs {
-			log.Printf("Received a message: %s", msg.Body)
+			log.Printf("received a message: %s", msg.Body)
 			go _global.persistentMessage(string(msg.Body))
 		}
 	}()
 
-	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
+	log.Printf("waiting for messages, to exit press CTRL+C")
 	<-forever
 }
 
@@ -275,6 +279,6 @@ func (_global *global) persistentMessage(message string) {
 	defer cancel()
 
 	log.Println("the message -- " + message)
-	_, err := _global.pgPool.ExecContext(ctx, `insert into messages (msg) values ($1);`, message)
+	_, err := _global.pgPool.ExecContext(ctx, `insert into t_message (message) values ($1);`, message)
 	tool.CheckThenPrint(err, "persistent message")
 }

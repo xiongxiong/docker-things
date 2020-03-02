@@ -11,16 +11,13 @@ import (
 
 type messageProcessor func(topic, message string)
 
-type brokerKey struct {
+type clientK struct {
 	broker   string
 	username string
 }
 
-type broker struct {
+type clientV struct {
 	sync.RWMutex
-	username string
-	password string
-	broker   string
 	mapTopic map[string]*struct{}
 	client   mqtt.Client
 	chQuit   chan struct{}
@@ -29,149 +26,164 @@ type broker struct {
 
 type global struct {
 	sync.RWMutex
-	mapConn map[string]*broker
+	mapConn map[clientK]*clientV
 }
 
 var _Global = global{
-	mapConn: make(map[string]*broker),
+	mapConn: make(map[clientK]*clientV),
 }
 
-// fetch or create it
-func (_global *global) addBroker(brok string) *broker {
+// get client
+func (_global *global) getClient(user, pass, brok string) *clientV {
 	_global.Lock()
 	defer _global.Unlock()
 
-	_broker := _global.mapConn[brok]
-	if _broker == nil {
+	_clientK := clientK{
+		broker:   brok,
+		username: user,
+	}
+	return _global.mapConn[_clientK]
+}
+
+// fetch or create it
+func (_global *global) addClient(user, pass, brok string) (err error) {
+	_global.Lock()
+	defer _global.Unlock()
+
+	_clientK := clientK{
+		broker:   brok,
+		username: user,
+	}
+	_clientV := _global.mapConn[_clientK]
+	if _clientV == nil {
 		chQuit := make(chan struct{})
 		chMsg := make(chan mqtt.Message)
 
 		opts := mqtt.NewClientOptions()
 		opts.SetAutoReconnect(true)
+		opts.SetUsername(user)
+		opts.SetPassword(pass)
 		opts.AddBroker(brok)
 		opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
 			chMsg <- msg
 		})
 		client := mqtt.NewClient(opts)
 
-		_broker = &broker{
+		if token := client.Connect(); token.Wait() {
+			if token.Error() != nil {
+				err = token.Error()
+				return
+			}
+		}
+
+		_clientV = &clientV{
 			client:   client,
 			mapTopic: make(map[string]*struct{}),
 			chQuit:   chQuit,
 			chMsg:    chMsg,
 		}
-		_global.mapConn[brok] = _broker
+		_global.mapConn[_clientK] = _clientV
 	}
 
-	return _broker
+	return
 }
 
-func (_global *global) delBroker(brok string) {
+func (_global *global) delClient(brok string) {
 	_global.Lock()
 	defer _global.Unlock()
 
 	delete(_global.mapConn, brok)
 }
 
-func (_broker *broker) hasTopic(topic string) bool {
-	_broker.RLock()
-	defer _broker.RUnlock()
+func (_clientV *clientV) hasTopic(topic string) bool {
+	_clientV.RLock()
+	defer _clientV.RUnlock()
 
-	return _broker.mapTopic[topic] != nil
+	return _clientV.mapTopic[topic] != nil
 }
 
-func (_broker *broker) addTopic(topic string) {
-	_broker.Lock()
-	defer _broker.Unlock()
+func (_clientV *clientV) addTopic(topic string) {
+	_clientV.Lock()
+	defer _clientV.Unlock()
 
-	if _broker.mapTopic[topic] == nil {
-		_broker.mapTopic[topic] = &struct{}{}
+	if _clientV.mapTopic[topic] == nil {
+		_clientV.mapTopic[topic] = &struct{}{}
 	}
 }
 
-func (_broker *broker) delTopic(topic string) {
-	_broker.Lock()
-	defer _broker.Unlock()
+func (_clientV *clientV) delTopic(topic string) {
+	_clientV.Lock()
+	defer _clientV.Unlock()
 
-	delete(_broker.mapTopic, topic)
-	if len(_broker.mapTopic) == 0 {
-		close(_broker.chQuit)
+	delete(_clientV.mapTopic, topic)
+	if len(_clientV.mapTopic) == 0 {
+		close(_clientV.chQuit)
 	}
 }
 
-// SubBrokerTopic Subscribe broker topic
-func SubBrokerTopic(user, pass, brok, topic string, msgProc messageProcessor) (err error) {
-	return _Global.subBrokerTopic(user, pass, brok, topic, msgProc)
+// SubClientTopic Subscribe broker topic
+func SubClientTopic(user, pass, brok, topic string, msgProc messageProcessor) (err error) {
+	return _Global.subClientTopic(user, pass, brok, topic, msgProc)
 }
 
-func (_global *global) subBrokerTopic(user, pass, brok, topic string, msgProc messageProcessor) (err error) {
+func (_global *global) subClientTopic(user, pass, brok, topic string, msgProc messageProcessor) (err error) {
 	defer func() {
 		err = tool.Error(recover())
 	}()
 
-	_broker := _global.addBroker(brok)
+	_clientV := _global.addClient(user, pass, brok)
 
-	// broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
-	// tool.CheckThenPanic(err, "connect mqtt broker")
-	// topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
-	// tool.CheckThenPanic(err, "connect mqtt topic")
-
-	if _broker.client.IsConnected() == false {
-		if token := _broker.client.Connect(); token.Wait() {
-			tool.CheckThenPanic(token.Error(), "client connect")
-		}
-	}
-	if _broker.hasTopic(topic) == false {
-		if token := _broker.client.Subscribe(topic, byte(2), nil); token.Wait() {
+	if _clientV.hasTopic(topic) == false {
+		if token := _clientV.client.Subscribe(topic, byte(2), nil); token.Wait() {
 			tool.CheckThenPanic(token.Error(), fmt.Sprintf("subscribe broker [%s] topic [%s]", brok, topic))
 		}
-		_broker.addTopic(topic)
+		_clientV.addTopic(topic)
 	}
 
 	go func() {
 		quit := false
 		for !quit {
 			select {
-			case msg := <-_broker.chMsg:
+			case msg := <-_clientV.chMsg:
 				topic, payload := msg.Topic(), (string(msg.Payload()))
 				log.Printf("received topic: %s, message: %s\n", topic, payload)
 				if msgProc != nil {
 					go msgProc(topic, payload)
 				}
-			case <-_broker.chQuit:
+			case <-_clientV.chQuit:
 				quit = true
 				log.Printf("message channel for broker [%s] closed", brok)
 			}
 		}
-		_broker.client.Disconnect(0)
-		_global.delBroker(brok)
+		_clientV.client.Disconnect(0)
+		_global.delClient(brok)
 		log.Printf("connection for broker [%s] closed", brok)
 	}()
 
 	return
 }
 
-// UnSubBrokerTopic Unsubscribe broker topic
-func UnSubBrokerTopic(brok, topic string) (err error) {
-	return _Global.unSubBrokerTopic(brok, topic)
+// UnSubClientTopic Unsubscribe broker topic
+func UnSubClientTopic(brok, topic string) (err error) {
+	return _Global.unSubClientTopic(brok, topic)
 }
 
-func (_global *global) unSubBrokerTopic(brok, topic string) (err error) {
+func (_global *global) unSubClientTopic(brok, topic string) (err error) {
 	defer func() {
 		err = tool.Error(recover())
 	}()
 
-	_broker := _global.mapConn[brok]
-	if _broker == nil {
+	_clientV := _global.mapConn[brok]
+	if _clientV == nil {
 		panic("there is no such broker")
 	}
-	if _broker.hasTopic(topic) == false {
+	if _clientV.hasTopic(topic) == false {
 		panic("there is no such topic")
 	}
 
-	if token := _broker.client.Unsubscribe(topic); token.Wait() {
+	if token := _clientV.client.Unsubscribe(topic); token.Wait() {
 		tool.CheckThenPanic(token.Error(), fmt.Sprintf("unsubscribe broker [%s] topic [%s]", brok, topic))
 	}
-	_broker.delTopic(topic)
+	_clientV.delTopic(topic)
 	return
 }

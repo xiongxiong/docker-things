@@ -1,13 +1,17 @@
-CREATE TABLE messages (
-        id BIGSERIAL PRIMARY KEY,
-        msg JSONB NOT NULL
+CREATE TABLE public.message (
+        id bigserial PRIMARY KEY,
+        subscribe_id bigserial,
+        topic text NOT NULL,
+        body jsonb NOT NULL
 );
-CREATE INDEX idxmsg ON messages USING GIN (msg);
+CREATE INDEX idx_subid_topic ON messages (subscribe_id, topic);
+CREATE INDEX idxbody ON messages USING GIN (body);
 
-CREATE TABLE brokers (
-        username TEXT,
-        password TEXT,
-        broker TEXT,
-        topic TEXT,
-        PRIMARY KEY (username, broker)
+CREATE TABLE public.subscribe (
+        id char(36) PRIMARY KEY,
+        username text,
+        password text,
+        brokers text,
+        topics text,
+        qos char(1) NOT NULL
 );
