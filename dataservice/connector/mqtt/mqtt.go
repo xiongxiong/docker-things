@@ -9,181 +9,132 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-type messageProcessor func(topic, message string)
+type messageProcessor func(clientID, topic, message string)
 
-type clientK struct {
-	broker   string
-	username string
-}
-
-type clientV struct {
-	sync.RWMutex
-	mapTopic map[string]*struct{}
-	client   mqtt.Client
-	chQuit   chan struct{}
-	chMsg    chan mqtt.Message
+type client struct {
+	username   string
+	password   string
+	mapBroker  map[string]struct{}
+	mapTopic   map[string]byte
+	mqttClient mqtt.Client
+	chMsg      chan mqtt.Message
 }
 
 type global struct {
 	sync.RWMutex
-	mapConn map[clientK]*clientV
+	mapClient map[string]*client
 }
 
 var _Global = global{
-	mapConn: make(map[clientK]*clientV),
+	mapClient: make(map[string]*client),
 }
 
 // get client
-func (_global *global) getClient(user, pass, brok string) *clientV {
-	_global.Lock()
-	defer _global.Unlock()
+func (_global *global) getClient(clientID string) *client {
+	_global.RLock()
+	defer _global.RUnlock()
 
-	_clientK := clientK{
-		broker:   brok,
-		username: user,
-	}
-	return _global.mapConn[_clientK]
+	return _global.mapClient[clientID]
 }
 
 // fetch or create it
-func (_global *global) addClient(user, pass, brok string) (err error) {
+func (_global *global) addClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
 	_global.Lock()
 	defer _global.Unlock()
 
-	_clientK := clientK{
-		broker:   brok,
-		username: user,
-	}
-	_clientV := _global.mapConn[_clientK]
-	if _clientV == nil {
-		chQuit := make(chan struct{})
-		chMsg := make(chan mqtt.Message)
-
-		opts := mqtt.NewClientOptions()
-		opts.SetAutoReconnect(true)
-		opts.SetUsername(user)
-		opts.SetPassword(pass)
-		opts.AddBroker(brok)
-		opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
-			chMsg <- msg
-		})
-		client := mqtt.NewClient(opts)
-
-		if token := client.Connect(); token.Wait() {
-			if token.Error() != nil {
-				err = token.Error()
-				return
-			}
-		}
-
-		_clientV = &clientV{
-			client:   client,
-			mapTopic: make(map[string]*struct{}),
-			chQuit:   chQuit,
-			chMsg:    chMsg,
-		}
-		_global.mapConn[_clientK] = _clientV
+	_client := client{
+		username:  username,
+		password:  password,
+		mapBroker: mapBroker,
+		mapTopic:  mapTopic,
+		chMsg:     make(chan mqtt.Message),
 	}
 
-	return
+	opts := mqtt.NewClientOptions()
+	opts.SetUsername(username)
+	opts.SetPassword(password)
+	for k := range _client.mapBroker {
+		opts.AddBroker(k)
+	}
+	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
+		_client.chMsg <- msg
+	})
+	_client.mqttClient = mqtt.NewClient(opts)
+
+	_global.mapClient[clientID] = &_client
+
+	return &_client
 }
 
-func (_global *global) delClient(brok string) {
+func (_global *global) delClient(clientID string) {
 	_global.Lock()
 	defer _global.Unlock()
 
-	delete(_global.mapConn, brok)
+	_client := _global.mapClient[clientID]
+	close(_client.chMsg)
+
+	delete(_global.mapClient, clientID)
 }
 
-func (_clientV *clientV) hasTopic(topic string) bool {
-	_clientV.RLock()
-	defer _clientV.RUnlock()
-
-	return _clientV.mapTopic[topic] != nil
+// Subscribe ...
+func Subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
+	return _Global.subscribe(clientID, username, password, mapBroker, mapTopic, msgProc)
 }
 
-func (_clientV *clientV) addTopic(topic string) {
-	_clientV.Lock()
-	defer _clientV.Unlock()
-
-	if _clientV.mapTopic[topic] == nil {
-		_clientV.mapTopic[topic] = &struct{}{}
-	}
-}
-
-func (_clientV *clientV) delTopic(topic string) {
-	_clientV.Lock()
-	defer _clientV.Unlock()
-
-	delete(_clientV.mapTopic, topic)
-	if len(_clientV.mapTopic) == 0 {
-		close(_clientV.chQuit)
-	}
-}
-
-// SubClientTopic Subscribe broker topic
-func SubClientTopic(user, pass, brok, topic string, msgProc messageProcessor) (err error) {
-	return _Global.subClientTopic(user, pass, brok, topic, msgProc)
-}
-
-func (_global *global) subClientTopic(user, pass, brok, topic string, msgProc messageProcessor) (err error) {
+func (_global *global) subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
 	defer func() {
 		err = tool.Error(recover())
 	}()
 
-	_clientV := _global.addClient(user, pass, brok)
+	_client := _global.addClient(clientID, username, password, mapBroker, mapTopic)
+	if token := _client.mqttClient.Connect(); token.Wait() {
+		tool.CheckThenPanic(token.Error(), "client connect")
+	}
 
-	if _clientV.hasTopic(topic) == false {
-		if token := _clientV.client.Subscribe(topic, byte(2), nil); token.Wait() {
-			tool.CheckThenPanic(token.Error(), fmt.Sprintf("subscribe broker [%s] topic [%s]", brok, topic))
-		}
-		_clientV.addTopic(topic)
+	if token := _client.mqttClient.SubscribeMultiple(mapTopic, nil); token.Wait() {
+		tool.CheckThenPanic(token.Error(), "client subscribe")
 	}
 
 	go func() {
-		quit := false
-		for !quit {
-			select {
-			case msg := <-_clientV.chMsg:
-				topic, payload := msg.Topic(), (string(msg.Payload()))
-				log.Printf("received topic: %s, message: %s\n", topic, payload)
-				if msgProc != nil {
-					go msgProc(topic, payload)
-				}
-			case <-_clientV.chQuit:
-				quit = true
-				log.Printf("message channel for broker [%s] closed", brok)
+		log.Printf("client [%s] listening ...", clientID)
+		for {
+			msg := <-_client.chMsg
+			topic, payload := msg.Topic(), (string(msg.Payload()))
+			log.Printf("received topic: %s, message: %s\n", topic, payload)
+			if msgProc != nil {
+				go msgProc(clientID, topic, payload)
 			}
 		}
-		_clientV.client.Disconnect(0)
-		_global.delClient(brok)
-		log.Printf("connection for broker [%s] closed", brok)
+
+		log.Printf("client [%s] disconnecting ...", clientID)
+		var topics []string
+		for k := range _client.mapTopic {
+			topics = append(topics, k)
+		}
+		if token := _client.mqttClient.Unsubscribe(topics...); token.Wait() {
+			tool.CheckThenPrint(token.Error(), fmt.Sprintf("unsubscribe client [%s]", clientID))
+		}
+		_client.mqttClient.Disconnect(0)
+		log.Printf("client [%s] disconnected", clientID)
 	}()
 
 	return
 }
 
-// UnSubClientTopic Unsubscribe broker topic
-func UnSubClientTopic(brok, topic string) (err error) {
-	return _Global.unSubClientTopic(brok, topic)
+// UnSubscribe ...
+func UnSubscribe(clientID string) {
+	_Global.unSubscribe(clientID)
 }
 
-func (_global *global) unSubClientTopic(brok, topic string) (err error) {
-	defer func() {
-		err = tool.Error(recover())
-	}()
+func (_global *global) unSubscribe(clientID string) {
+	_global.delClient(clientID)
+}
 
-	_clientV := _global.mapConn[brok]
-	if _clientV == nil {
-		panic("there is no such broker")
-	}
-	if _clientV.hasTopic(topic) == false {
-		panic("there is no such topic")
-	}
+// ReSubscribe ...
+func ReSubscribe() {
+	_Global.reSubscribe()
+}
 
-	if token := _clientV.client.Unsubscribe(topic); token.Wait() {
-		tool.CheckThenPanic(token.Error(), fmt.Sprintf("unsubscribe broker [%s] topic [%s]", brok, topic))
-	}
-	_clientV.delTopic(topic)
-	return
+func (_global *global) reSubscribe() {
+	// TODO resubscribe
 }

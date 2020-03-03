@@ -94,3 +94,5 @@ var _ = Describe("mqtt", func() {
 
 	})
 })
+
+// TODO test message all processed before client closed

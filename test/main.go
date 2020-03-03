@@ -1,8 +1,18 @@
 package main
 
 func main() {
-
+	var x byte = byte(1)
+	println(x)
 }
+
+// func main() {
+// 	var x []string
+// 	if x == nil {
+// 		println("nil start")
+// 	}
+// 	x = append(x, "a")
+// 	println(len(x))
+// }
 
 // type oo struct {
 // 	name string
