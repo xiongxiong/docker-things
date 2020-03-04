@@ -78,8 +78,8 @@ func (_global *global) loadConfig() {
 }
 
 func (_global *global) loadData() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// defer cancel()
 
 	// _, err := _global.pgPool.ExecContext(ctx, `insert into messages (msg) values ($1);`, message)
 	// tool.CheckThenPrint(err, "persistent message")

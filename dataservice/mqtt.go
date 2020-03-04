@@ -2,32 +2,48 @@ package main
 
 import (
 	"context"
-	"dataservice/connector/mqtt"
+	mqttC "dataservice/connector/mqtt"
 	"dataservice/store"
 	"dataservice/tool"
+	"encoding/json"
 	"log"
 	"time"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	gin "github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/streadway/amqp"
 )
 
 type reqbodySubscribe struct {
-	clientID string
-	client   struct {
-		username string
-		password string
-		brokers  []string
-		topics   []struct {
-			topic string
-			qos   byte
-		}
+	ClientID string   `json:"clientID"`
+	Username string   `json:"username"`
+	Password string   `json:"password"`
+	Brokers  []string `json:"brokers"`
+	Topics   []struct {
+		Topic string `json:"topic"`
+		Qos   byte   `json:"qos"`
+	} `json:"topics"`
+}
+
+func (rbSubscribe *reqbodySubscribe) getBrokers() map[string]struct{} {
+	brokers := make(map[string]struct{})
+	for _, v := range rbSubscribe.Brokers {
+		brokers[v] = struct{}{}
 	}
+	return brokers
+}
+
+func (rbSubscribe *reqbodySubscribe) getTopics() map[string]byte {
+	topics := make(map[string]byte)
+	for _, p := range rbSubscribe.Topics {
+		topics[p.Topic] = p.Qos
+	}
+	return topics
 }
 
 type reqbodyUnSubscribe struct {
-	clientID string
+	ClientID string `json:"clientID"`
 }
 
 func (_global *global) mqttSubscribe(c *gin.Context) {
@@ -45,8 +61,8 @@ func (_global *global) mqttSubscribe(c *gin.Context) {
 	err := c.BindJSON(rb)
 	tool.CheckThenPanic(err, "parse request body")
 
-	if len(rb.clientID) != 0 {
-		isValid := store.ValidateClientID("", rb.clientID)
+	if len(rb.ClientID) != 0 {
+		isValid := store.ValidateClientID("", rb.ClientID)
 		if isValid == false {
 			c.JSON(200, gin.H{
 				"code":    "no",
@@ -54,13 +70,13 @@ func (_global *global) mqttSubscribe(c *gin.Context) {
 			})
 		}
 	} else {
-		rb.clientID = uuid.New().String()
+		rb.ClientID = uuid.New().String()
 	}
 
 	err = store.SaveClient("")
 	tool.CheckThenPanic(err, "store client")
 
-	err = mqtt.Subscribe(string(broker), string(topic), _global.push)
+	err = mqttC.Subscribe(rb.ClientID, rb.Username, rb.Password, rb.getBrokers(), rb.getTopics(), _global.push)
 	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
@@ -86,7 +102,7 @@ func (_global *global) mqttUnSubscribe(c *gin.Context) {
 
 	// TODO save postgres
 
-	mqtt.UnSubscribe(rb.clientID)
+	mqttC.UnSubscribe(rb.ClientID)
 
 	c.JSON(200, gin.H{
 		"code":    "ok",
@@ -95,16 +111,25 @@ func (_global *global) mqttUnSubscribe(c *gin.Context) {
 }
 
 // push message to message queue
-func (_global *global) push(topic, message string) {
+func (_global *global) push(clientID string, msg mqtt.Message) {
+	// TODO too many queue, reuse
 	q, err := _global.amqpChan.QueueDeclare("hello", false, false, false, false, nil)
 	tool.CheckThenPanic(err, "declare a queue")
 
+	sMsg := store.Message{
+		ClientID:  clientID,
+		Topic:     msg.Topic(),
+		Payload:   msg.Payload(),
+		CreatedAt: time.Now(),
+	}
+	bs, err := json.Marshal(sMsg)
+	tool.CheckThenPrint(err, "marshal message")
+
 	err = _global.amqpChan.Publish("", q.Name, false, false, amqp.Publishing{
-		ContentType: "text/plain",
-		Body:        []byte(message),
+		ContentType: "application/json",
+		Body:        bs,
 	})
-	log.Printf(" [x] Sent %s", message)
-	tool.CheckThenPanic(err, "publish a message")
+	tool.CheckThenPanic(err, "publish message")
 }
 
 // pull and process message

@@ -1,11 +1,13 @@
 CREATE TABLE public.message (
         id bigserial PRIMARY KEY,
         -- client id (uuid)
-        client_id char(36),
+        clientID char(36),
         -- message topic
         topic text NOT NULL,
         -- message payload
-        payload jsonb NOT NULL
+        payload jsonb NOT NULL,
+        -- timestamp
+        createdAt timestamp
 );
 CREATE INDEX idx_client_topic ON messages (client_id, topic);
 CREATE INDEX idx_payload ON messages USING GIN (payload);
@@ -13,9 +15,13 @@ CREATE INDEX idx_payload ON messages USING GIN (payload);
 CREATE TABLE public.client (
         -- id (uuid)
         id char(36) PRIMARY KEY,
+        -- is closed
+        closed boolean,
         -- system user id
-        user_id text NOT NULL,
+        userID text NOT NULL,
         -- client config
-        payload jsonb NOT NULL
+        payload jsonb NOT NULL,
+        -- timestamp
+        createdAt timestamp
 );
 CREATE INDEX idx_payload ON messages USING GIN (payload);

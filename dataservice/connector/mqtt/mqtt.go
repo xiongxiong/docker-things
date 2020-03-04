@@ -9,7 +9,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-type messageProcessor func(clientID, topic, message string)
+type messageProcessor func(clientID string, msg mqtt.Message)
 
 type client struct {
 	username   string
@@ -107,10 +107,14 @@ func (_global *global) subscribe(clientID, username, password string, mapBroker 
 		log.Printf("client [%s] listening ...", clientID)
 		for {
 			msg := <-_client.chMsg
-			topic, payload := msg.Topic(), (string(msg.Payload()))
-			log.Printf("received topic: %s, message: %s\n", topic, payload)
 			if msgProc != nil {
-				go msgProc(clientID, topic, payload)
+				go func() {
+					defer func() {
+						err = tool.Error(recover())
+						tool.ErrorThenPrint(err, "message process")
+					}()
+					msgProc(clientID, msg)
+				}()
 			}
 		}
 
@@ -136,13 +140,4 @@ func UnSubscribe(clientID string) {
 
 func (_global *global) unSubscribe(clientID string) {
 	_global.delClient(clientID)
-}
-
-// ReSubscribe ...
-func ReSubscribe() {
-	_Global.reSubscribe()
-}
-
-func (_global *global) reSubscribe() {
-	// TODO resubscribe
 }
