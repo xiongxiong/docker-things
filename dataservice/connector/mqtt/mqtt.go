@@ -39,9 +39,6 @@ func (_global *global) getClient(clientID string) *client {
 
 // fetch or create it
 func (_global *global) addClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
-	_global.Lock()
-	defer _global.Unlock()
-
 	_client := client{
 		username:  username,
 		password:  password,
@@ -61,7 +58,17 @@ func (_global *global) addClient(clientID, username, password string, mapBroker 
 	})
 	_client.mqttClient = mqtt.NewClient(opts)
 
+	_global.Lock()
+	// delete old
+	old := _global.mapClient[clientID]
+	if old != nil {
+		close(old.chMsg)
+	}
+	delete(_global.mapClient, clientID)
+
+	// add new
 	_global.mapClient[clientID] = &_client
+	_global.Unlock()
 
 	return &_client
 }
@@ -71,8 +78,9 @@ func (_global *global) delClient(clientID string) {
 	defer _global.Unlock()
 
 	_client := _global.mapClient[clientID]
-	close(_client.chMsg)
-
+	if _client != nil {
+		close(_client.chMsg)
+	}
 	delete(_global.mapClient, clientID)
 }
 

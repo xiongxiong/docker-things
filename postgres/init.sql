@@ -1,24 +1,21 @@
 CREATE TABLE public.message (
         id bigserial PRIMARY KEY,
-        -- subscription id (uuid)
-        subscription_id char(36),
+        -- client id (uuid)
+        client_id char(36),
         -- message topic
         topic text NOT NULL,
         -- message payload
         payload jsonb NOT NULL
 );
-CREATE INDEX idx_subid_topic ON messages (subscription_id, topic);
-CREATE INDEX idxbody ON messages USING GIN (payload);
+CREATE INDEX idx_client_topic ON messages (client_id, topic);
+CREATE INDEX idx_payload ON messages USING GIN (payload);
 
-CREATE TABLE public.subscription (
+CREATE TABLE public.client (
         -- id (uuid)
         id char(36) PRIMARY KEY,
-        -- is subscription open
-        isOpen boolean,
-        username text,
-        password text,
-        -- broker list
-        brokers text,
-        -- topic list
-        topicPairs text
+        -- system user id
+        user_id text NOT NULL,
+        -- client config
+        payload jsonb NOT NULL
 );
+CREATE INDEX idx_payload ON messages USING GIN (payload);

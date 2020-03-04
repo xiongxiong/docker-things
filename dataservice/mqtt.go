@@ -3,23 +3,31 @@ package main
 import (
 	"context"
 	"dataservice/connector/mqtt"
+	"dataservice/store"
 	"dataservice/tool"
-	"encoding/base64"
 	"log"
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/streadway/amqp"
 )
 
-type bodySubscribe struct {
-	username string
-	password string
-	brokers  []string
-	topics   []struct {
-		topic string
-		qos   byte
+type reqbodySubscribe struct {
+	clientID string
+	client   struct {
+		username string
+		password string
+		brokers  []string
+		topics   []struct {
+			topic string
+			qos   byte
+		}
 	}
+}
+
+type reqbodyUnSubscribe struct {
+	clientID string
 }
 
 func (_global *global) mqttSubscribe(c *gin.Context) {
@@ -33,23 +41,26 @@ func (_global *global) mqttSubscribe(c *gin.Context) {
 		}
 	}()
 
-	// for _, v := range strings.Split(brokers, "-") {
-	// 	bs, err := base64.StdEncoding.DecodeString(v)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	_client.mapBroker[string(bs)] = struct{}
-	// }
-	// for _, v := range strings.Split(topics, "-") {
-	// 	vs := strings.Split(v, ":");
+	var rb reqbodySubscribe
+	err := c.BindJSON(rb)
+	tool.CheckThenPanic(err, "parse request body")
 
-	// }
+	if len(rb.clientID) != 0 {
+		isValid := store.ValidateClientID("", rb.clientID)
+		if isValid == false {
+			c.JSON(200, gin.H{
+				"code":    "no",
+				"message": "invalid client id",
+			})
+		}
+	} else {
+		rb.clientID = uuid.New().String()
+	}
 
-	broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
-	tool.CheckThenPanic(err, "connect mqtt broker")
-	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
-	tool.CheckThenPanic(err, "connect mqtt topic")
-	err = mqtt.SubBrokerTopic(string(broker), string(topic), _global.push)
+	err = store.SaveClient("")
+	tool.CheckThenPanic(err, "store client")
+
+	err = mqtt.Subscribe(string(broker), string(topic), _global.push)
 	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
@@ -69,12 +80,13 @@ func (_global *global) mqttUnSubscribe(c *gin.Context) {
 		}
 	}()
 
-	broker, err := base64.StdEncoding.DecodeString(c.Param("broker"))
-	tool.CheckThenPanic(err, "connect mqtt broker")
-	topic, err := base64.StdEncoding.DecodeString(c.Param("topic"))
-	tool.CheckThenPanic(err, "connect mqtt topic")
-	err = mqtt.UnSubBrokerTopic(c.Param("broker"), c.Param("topic"))
-	tool.CheckThenPanic(err, "subscribe")
+	var rb reqbodyUnSubscribe
+	err := c.BindJSON(rb)
+	tool.CheckThenPanic(err, "parse request body")
+
+	// TODO save postgres
+
+	mqtt.UnSubscribe(rb.clientID)
 
 	c.JSON(200, gin.H{
 		"code":    "ok",
