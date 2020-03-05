@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	mqttC "dataservice/connector/mqtt"
 	"dataservice/store"
 	"dataservice/tool"
@@ -46,7 +45,7 @@ type reqbodyUnSubscribe struct {
 	ClientID string `json:"clientID"`
 }
 
-func (_global *global) mqttSubscribe(c *gin.Context) {
+func (_resources *resources) mqttSubscribe(c *gin.Context) {
 	defer func() {
 		if err := tool.Error(recover()); err != nil {
 			log.Println(err.Error())
@@ -76,7 +75,7 @@ func (_global *global) mqttSubscribe(c *gin.Context) {
 	err = store.SaveClient("")
 	tool.CheckThenPanic(err, "store client")
 
-	err = mqttC.Subscribe(rb.ClientID, rb.Username, rb.Password, rb.getBrokers(), rb.getTopics(), _global.push)
+	err = mqttC.Subscribe(rb.ClientID, rb.Username, rb.Password, rb.getBrokers(), rb.getTopics(), _resources.push)
 	tool.CheckThenPanic(err, "subscribe")
 
 	c.JSON(200, gin.H{
@@ -85,7 +84,7 @@ func (_global *global) mqttSubscribe(c *gin.Context) {
 	})
 }
 
-func (_global *global) mqttUnSubscribe(c *gin.Context) {
+func (_resources *resources) mqttUnSubscribe(c *gin.Context) {
 	defer func() {
 		if err := tool.Error(recover()); err != nil {
 			log.Println(err.Error())
@@ -111,7 +110,7 @@ func (_global *global) mqttUnSubscribe(c *gin.Context) {
 }
 
 // push message to message queue
-func (_global *global) push(clientID string, msg mqtt.Message) {
+func (_resources *resources) push(clientID string, msg mqtt.Message) {
 	sMsg := store.Message{
 		ClientID:  clientID,
 		Topic:     msg.Topic(),
@@ -121,7 +120,7 @@ func (_global *global) push(clientID string, msg mqtt.Message) {
 	bs, err := json.Marshal(sMsg)
 	tool.CheckThenPrint(err, "marshal message")
 
-	err = _global.amqpChan.Publish("", _global.amqpQueue.Name, false, false, amqp.Publishing{
+	err = _resources.amqpChan.Publish("", _resources.amqpQueue.Name, false, false, amqp.Publishing{
 		ContentType: "application/json",
 		Body:        bs,
 	})
@@ -129,25 +128,26 @@ func (_global *global) push(clientID string, msg mqtt.Message) {
 }
 
 // pull and process message
-func (_global *global) pull(down chan<- struct{}) {
-	msgs, err := _global.amqpChan.Consume(_global.amqpQueue.Name, "", true, false, false, false, nil)
+func (_resources *resources) pull(down chan<- struct{}) {
+	msgs, err := _resources.amqpChan.Consume(_resources.amqpQueue.Name, "", true, false, false, false, nil)
 	tool.CheckThenPanic(err, "register a consumer")
 
 	log.Printf("waiting for messages")
 	for msg := range msgs {
 		log.Printf("received a message: %s", msg.Body)
-		go _global.persistentMessage(string(msg.Body))
+		go func() {
+			defer func() {
+				if err := tool.Error(recover()); err != nil {
+					log.Println(err.Error())
+				}
+			}()
+
+			var sMsg store.Message
+			err := json.Unmarshal(msg.Body, &sMsg)
+			tool.ErrorThenPanic(err, "unmarshal store message")
+			store.PersistentMessage(_resources.db, &sMsg)
+		}()
 	}
 
 	close(down)
-}
-
-// persistentMessage persistent message to database
-func (_global *global) persistentMessage(message string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	log.Println("the message -- " + message)
-	_, err := _global.pgPool.ExecContext(ctx, `insert into t_message (message) values ($1);`, message)
-	tool.CheckThenPrint(err, "persistent message")
 }

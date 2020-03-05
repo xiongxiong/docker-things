@@ -19,84 +19,66 @@ import (
 	"github.com/streadway/amqp"
 )
 
-// config
-type config struct {
-	serverPort, pgConnStr, amqpConnStr string
-}
-
-// resource
-type resource struct {
-	pgPool    *sql.DB
-	amqpConn  *amqp.Connection
-	amqpChan  *amqp.Channel
-	amqpQueue amqp.Queue
-}
-
-// global
-type global struct {
-	config
-	resource
-}
-
-var _Global global
+// resources
+var db *sql.DB
+var amqpConn *amqp.Connection
+var amqpChan *amqp.Channel
+var amqpQueue amqp.Queue
 
 func main() {
 	down := make(chan struct{})
 
-	_Global.loadConfig()
-	freeFunc := _Global.initResource()
-	_Global.loadData()
+	serverPort, pgConnStr, amqpConnStr := loadConfig()
+	drop := _Resources.make(serverPort, pgConnStr, amqpConnStr)
+	_Resources.loadData()
 
-	go _Global.pull(down)
-	_Global.serve(down, freeFunc)
+	go _Resources.pull(down)
+	_Resources.serve(serverPort, down, drop)
 }
 
-// read config
-func (_global *global) loadConfig() {
+func loadConfig() (serverPort, pgConnStr, amqpConnStr string) {
+	log.Println("read config")
+
+	var err error
+
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
-	if err := viper.ReadInConfig(); err != nil {
+	if err = viper.ReadInConfig(); err != nil {
 		tool.CheckThenPrint(err, "read config file")
 	}
 
 	viper.SetDefault("server.port", "8000")
-	_global.serverPort = viper.GetString("server.port")
-	log.Printf("config of server port -- %s", _global.serverPort)
+	serverPort = viper.GetString("server.port")
+	log.Printf("config of server port -- %s", serverPort)
 
 	viper.SetDefault("postgres.user", "guest")
 	viper.SetDefault("postgres.pass", "guest")
 	viper.SetDefault("postgres.host", "localhost")
 	viper.SetDefault("postgres.port", "5432")
 	viper.SetDefault("postgres.db", "thingspanel")
-	_global.pgConnStr = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", viper.GetString("postgres.user"), viper.GetString("postgres.pass"), viper.GetString("postgres.host"), viper.GetString("postgres.port"), viper.GetString("postgres.db"))
-	log.Printf("config of postgres -- %s", _global.pgConnStr)
+	pgConnStr = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", viper.GetString("postgres.user"), viper.GetString("postgres.pass"), viper.GetString("postgres.host"), viper.GetString("postgres.port"), viper.GetString("postgres.db"))
+	log.Printf("config of postgres -- %s", pgConnStr)
 
 	viper.SetDefault("amqp.user", "guest")
 	viper.SetDefault("amqp.pass", "guest")
 	viper.SetDefault("amqp.host", "localhost")
 	viper.SetDefault("amqp.port", "5672")
-	_global.amqpConnStr = fmt.Sprintf("amqp://%s:%s@%s:%s/", viper.GetString("amqp.user"), viper.GetString("amqp.pass"), viper.GetString("amqp.host"), viper.GetString("amqp.port"))
-	log.Printf("config of amqp -- %s", _global.amqpConnStr)
+	amqpConnStr = fmt.Sprintf("amqp://%s:%s@%s:%s/", viper.GetString("amqp.user"), viper.GetString("amqp.pass"), viper.GetString("amqp.host"), viper.GetString("amqp.port"))
+	log.Printf("config of amqp -- %s", amqpConnStr)
+
+	return
 }
 
-func (_global *global) loadData() {
-	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// defer cancel()
-
-	// _, err := _global.pgPool.ExecContext(ctx, `insert into messages (msg) values ($1);`, message)
-	// tool.CheckThenPrint(err, "persistent message")
-}
-
-// init resources
-func (_global *global) initResource() (freeFunc func()) {
-	log.Println("Prepare resources")
+// make resources
+func (_resources *resources) make(serverPort, pgConnStr, amqpConnStr string) func() {
+	log.Println("make resources")
 
 	var err error
-	var freeSteps list.List
+	var dropSteps list.List
 
 	for i := 0; i < 10; i++ {
-		_global.pgPool, err = sql.Open("postgres", _global.pgConnStr)
+		_resources.db, err = sql.Open("postgres", pgConnStr)
 		if err != nil {
 			log.Println("open postgres failure, retry after 3 seconds")
 			time.Sleep(3 * time.Second)
@@ -105,17 +87,17 @@ func (_global *global) initResource() (freeFunc func()) {
 		}
 	}
 	tool.CheckThenPanic(err, "open data source")
-	freeSteps.PushBack(func() {
-		if _global.pgPool != nil {
-			tool.CheckThenPrint(_global.pgPool.Close(), "close data source")
+	dropSteps.PushBack(func() {
+		if _resources.db != nil {
+			tool.CheckThenPrint(_resources.db.Close(), "close data source")
 		}
 	})
-	_global.pgPool.SetConnMaxLifetime(0)
-	_global.pgPool.SetMaxIdleConns(3)
-	_global.pgPool.SetMaxOpenConns(3)
+	_resources.db.SetConnMaxLifetime(0)
+	_resources.db.SetMaxIdleConns(3)
+	_resources.db.SetMaxOpenConns(3)
 
 	for i := 0; i < 10; i++ {
-		_global.amqpConn, err = amqp.Dial(_global.amqpConnStr)
+		_resources.amqpConn, err = amqp.Dial(amqpConnStr)
 		if err != nil {
 			log.Println("open rabbitmq failure, retry after 3 seconds")
 			time.Sleep(3 * time.Second)
@@ -124,27 +106,27 @@ func (_global *global) initResource() (freeFunc func()) {
 		}
 	}
 	tool.CheckThenPanic(err, "connect amqp")
-	freeSteps.PushBack(func() {
-		if _global.amqpConn != nil {
-			tool.CheckThenPrint(_global.amqpConn.Close(), "close amqp connection")
+	dropSteps.PushBack(func() {
+		if _resources.amqpConn != nil {
+			tool.CheckThenPrint(_resources.amqpConn.Close(), "close amqp connection")
 		}
 	})
 
-	_global.amqpChan, err = _global.amqpConn.Channel()
+	_resources.amqpChan, err = _resources.amqpConn.Channel()
 	tool.CheckThenPanic(err, "open a channel")
-	freeSteps.PushBack(func() {
-		if _global.amqpChan != nil {
-			tool.CheckThenPrint(_global.amqpChan.Close(), "close amqp channel")
+	dropSteps.PushBack(func() {
+		if _resources.amqpChan != nil {
+			tool.CheckThenPrint(_resources.amqpChan.Close(), "close amqp channel")
 		}
 	})
 
-	_global.amqpQueue, err = _global.amqpChan.QueueDeclare("postgres", true, false, false, false, nil)
+	_resources.amqpQueue, err = _resources.amqpChan.QueueDeclare("postgres", true, false, false, false, nil)
 	tool.CheckThenPanic(err, "declare a queue")
 
 	return func() {
 		log.Println("Release resources")
 
-		for freeStep := freeSteps.Back(); freeStep != nil; freeStep = freeStep.Prev() {
+		for freeStep := dropSteps.Back(); freeStep != nil; freeStep = freeStep.Prev() {
 			if fc, ok := freeStep.Value.(func()); ok {
 				fc()
 			}
@@ -152,17 +134,25 @@ func (_global *global) initResource() (freeFunc func()) {
 	}
 }
 
+func (_resources *resources) loadData() {
+	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// defer cancel()
+
+	// _, err := _resources.db.ExecContext(ctx, `insert into messages (msg) values ($1);`, message)
+	// tool.CheckThenPrint(err, "persistent message")
+}
+
 // serve server
-func (_global *global) serve(down chan struct{}, freeFunc func()) {
+func (_resources *resources) serve(serverPort string, down chan struct{}, freeFunc func()) {
 	router := gin.Default()
 
 	router.GET("/ping", ping)
 
-	router.POST("/mqtt/unsubscribe", _global.mqttUnSubscribe)
-	router.POST("/mqtt/subscribe", _global.mqttSubscribe)
+	router.POST("/mqtt/unsubscribe", _resources.mqttUnSubscribe)
+	router.POST("/mqtt/subscribe", _resources.mqttSubscribe)
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", _global.serverPort),
+		Addr:    fmt.Sprintf(":%s", serverPort),
 		Handler: router,
 	}
 

@@ -1,6 +1,10 @@
 package store
 
-import "time"
+import (
+	"context"
+	"database/sql"
+	"time"
+)
 
 // Client info
 type Client struct {
@@ -28,4 +32,13 @@ func ValidateClientID(userID, clientID string) bool {
 // SaveClient save client
 func SaveClient(userID string) (err error) {
 	return
+}
+
+// PersistentMessage persistent message
+func PersistentMessage(db *sql.DB, msg *Message) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := db.ExecContext(ctx, `insert into t_message (message) values ($1);`, msg)
+	return err
 }

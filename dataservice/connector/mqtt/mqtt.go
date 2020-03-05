@@ -20,25 +20,25 @@ type client struct {
 	chMsg      chan mqtt.Message
 }
 
-type global struct {
+type clients struct {
 	sync.RWMutex
 	mapClient map[string]*client
 }
 
-var _Global = global{
+var _Clients = clients{
 	mapClient: make(map[string]*client),
 }
 
 // get client
-func (_global *global) getClient(clientID string) *client {
-	_global.RLock()
-	defer _global.RUnlock()
+func (_clients *clients) getClient(clientID string) *client {
+	_clients.RLock()
+	defer _clients.RUnlock()
 
-	return _global.mapClient[clientID]
+	return _clients.mapClient[clientID]
 }
 
 // fetch or create it
-func (_global *global) addClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
+func (_clients *clients) addClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
 	_client := client{
 		username:  username,
 		password:  password,
@@ -58,43 +58,43 @@ func (_global *global) addClient(clientID, username, password string, mapBroker 
 	})
 	_client.mqttClient = mqtt.NewClient(opts)
 
-	_global.Lock()
+	_clients.Lock()
 	// delete old
-	old := _global.mapClient[clientID]
+	old := _clients.mapClient[clientID]
 	if old != nil {
 		close(old.chMsg)
 	}
-	delete(_global.mapClient, clientID)
+	delete(_clients.mapClient, clientID)
 
 	// add new
-	_global.mapClient[clientID] = &_client
-	_global.Unlock()
+	_clients.mapClient[clientID] = &_client
+	_clients.Unlock()
 
 	return &_client
 }
 
-func (_global *global) delClient(clientID string) {
-	_global.Lock()
-	defer _global.Unlock()
+func (_clients *clients) delClient(clientID string) {
+	_clients.Lock()
+	defer _clients.Unlock()
 
-	_client := _global.mapClient[clientID]
+	_client := _clients.mapClient[clientID]
 	if _client != nil {
 		close(_client.chMsg)
 	}
-	delete(_global.mapClient, clientID)
+	delete(_clients.mapClient, clientID)
 }
 
 // Subscribe ...
 func Subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
-	return _Global.subscribe(clientID, username, password, mapBroker, mapTopic, msgProc)
+	return _Clients.subscribe(clientID, username, password, mapBroker, mapTopic, msgProc)
 }
 
-func (_global *global) subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
+func (_clients *clients) subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
 	defer func() {
 		err = tool.Error(recover())
 	}()
 
-	_client := _global.addClient(clientID, username, password, mapBroker, mapTopic)
+	_client := _clients.addClient(clientID, username, password, mapBroker, mapTopic)
 	if token := _client.mqttClient.Connect(); token.Wait() {
 		tool.CheckThenPanic(token.Error(), "client connect")
 	}
@@ -135,9 +135,9 @@ func (_global *global) subscribe(clientID, username, password string, mapBroker 
 
 // UnSubscribe ...
 func UnSubscribe(clientID string) {
-	_Global.unSubscribe(clientID)
+	_Clients.unSubscribe(clientID)
 }
 
-func (_global *global) unSubscribe(clientID string) {
-	_global.delClient(clientID)
+func (_clients *clients) unSubscribe(clientID string) {
+	_clients.delClient(clientID)
 }
