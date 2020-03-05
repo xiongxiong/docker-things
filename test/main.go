@@ -1,9 +1,23 @@
 package main
 
+import (
+	"fmt"
+	"unsafe"
+)
+
 func main() {
-	var x byte = byte(1)
-	println(x)
+	y := struct{}{}
+	println(unsafe.Sizeof(y))
+	fmt.Printf("%T\n", y)
+	var x interface{}
+	println(unsafe.Sizeof(x))
+	fmt.Printf("%T\n", x)
 }
+
+// func main() {
+// 	var x byte = byte(1)
+// 	println(x)
+// }
 
 // func main() {
 // 	var x []string

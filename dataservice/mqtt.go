@@ -112,10 +112,6 @@ func (_global *global) mqttUnSubscribe(c *gin.Context) {
 
 // push message to message queue
 func (_global *global) push(clientID string, msg mqtt.Message) {
-	// TODO too many queue, reuse
-	q, err := _global.amqpChan.QueueDeclare("hello", false, false, false, false, nil)
-	tool.CheckThenPanic(err, "declare a queue")
-
 	sMsg := store.Message{
 		ClientID:  clientID,
 		Topic:     msg.Topic(),
@@ -125,7 +121,7 @@ func (_global *global) push(clientID string, msg mqtt.Message) {
 	bs, err := json.Marshal(sMsg)
 	tool.CheckThenPrint(err, "marshal message")
 
-	err = _global.amqpChan.Publish("", q.Name, false, false, amqp.Publishing{
+	err = _global.amqpChan.Publish("", _global.amqpQueue.Name, false, false, amqp.Publishing{
 		ContentType: "application/json",
 		Body:        bs,
 	})
@@ -133,24 +129,17 @@ func (_global *global) push(clientID string, msg mqtt.Message) {
 }
 
 // pull and process message
-func (_global *global) pull() {
-	q, err := _global.amqpChan.QueueDeclare("hello", false, false, false, false, nil)
-	tool.CheckThenPanic(err, "declare a queue")
-
-	msgs, err := _global.amqpChan.Consume(q.Name, "", true, false, false, false, nil)
+func (_global *global) pull(down chan<- struct{}) {
+	msgs, err := _global.amqpChan.Consume(_global.amqpQueue.Name, "", true, false, false, false, nil)
 	tool.CheckThenPanic(err, "register a consumer")
 
-	forever := make(chan bool)
+	log.Printf("waiting for messages")
+	for msg := range msgs {
+		log.Printf("received a message: %s", msg.Body)
+		go _global.persistentMessage(string(msg.Body))
+	}
 
-	go func() {
-		for msg := range msgs {
-			log.Printf("received a message: %s", msg.Body)
-			go _global.persistentMessage(string(msg.Body))
-		}
-	}()
-
-	log.Printf("waiting for messages, to exit press CTRL+C")
-	<-forever
+	close(down)
 }
 
 // persistentMessage persistent message to database

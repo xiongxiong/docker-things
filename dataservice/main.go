@@ -26,9 +26,10 @@ type config struct {
 
 // resource
 type resource struct {
-	pgPool   *sql.DB
-	amqpConn *amqp.Connection
-	amqpChan *amqp.Channel
+	pgPool    *sql.DB
+	amqpConn  *amqp.Connection
+	amqpChan  *amqp.Channel
+	amqpQueue amqp.Queue
 }
 
 // global
@@ -40,12 +41,14 @@ type global struct {
 var _Global global
 
 func main() {
+	down := make(chan struct{})
+
 	_Global.loadConfig()
-	defer _Global.initResource()()
+	freeFunc := _Global.initResource()
 	_Global.loadData()
 
-	go _Global.pull()
-	_Global.serve()
+	go _Global.pull(down)
+	_Global.serve(down, freeFunc)
 }
 
 // read config
@@ -103,8 +106,8 @@ func (_global *global) initResource() (freeFunc func()) {
 	}
 	tool.CheckThenPanic(err, "open data source")
 	freeSteps.PushBack(func() {
-		if _global.amqpChan != nil {
-			tool.CheckThenPrint(_global.amqpChan.Close(), "close amqp channel")
+		if _global.pgPool != nil {
+			tool.CheckThenPrint(_global.pgPool.Close(), "close data source")
 		}
 	})
 	_global.pgPool.SetConnMaxLifetime(0)
@@ -126,13 +129,17 @@ func (_global *global) initResource() (freeFunc func()) {
 			tool.CheckThenPrint(_global.amqpConn.Close(), "close amqp connection")
 		}
 	})
+
 	_global.amqpChan, err = _global.amqpConn.Channel()
 	tool.CheckThenPanic(err, "open a channel")
 	freeSteps.PushBack(func() {
-		if _global.pgPool != nil {
-			tool.CheckThenPrint(_global.pgPool.Close(), "close data source")
+		if _global.amqpChan != nil {
+			tool.CheckThenPrint(_global.amqpChan.Close(), "close amqp channel")
 		}
 	})
+
+	_global.amqpQueue, err = _global.amqpChan.QueueDeclare("postgres", true, false, false, false, nil)
+	tool.CheckThenPanic(err, "declare a queue")
 
 	return func() {
 		log.Println("Release resources")
@@ -146,7 +153,7 @@ func (_global *global) initResource() (freeFunc func()) {
 }
 
 // serve server
-func (_global *global) serve() {
+func (_global *global) serve(down chan struct{}, freeFunc func()) {
 	router := gin.Default()
 
 	router.GET("/ping", ping)
@@ -158,9 +165,8 @@ func (_global *global) serve() {
 		Addr:    fmt.Sprintf(":%s", _global.serverPort),
 		Handler: router,
 	}
-	down := make(chan struct{})
 
-	go gracefullyShutdown(srv, down)
+	go gracefullyShutdown(srv, freeFunc)
 
 	err := srv.ListenAndServe()
 	if http.ErrServerClosed != err {
@@ -168,9 +174,10 @@ func (_global *global) serve() {
 	}
 
 	<-down
+	log.Println("server gracefully shutdown")
 }
 
-func gracefullyShutdown(srv *http.Server, down chan struct{}) {
+func gracefullyShutdown(srv *http.Server, freeFunc func()) {
 	quit := make(chan os.Signal)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -182,8 +189,7 @@ func gracefullyShutdown(srv *http.Server, down chan struct{}) {
 		tool.CheckThenPanic(err, "server shutdown")
 	}
 
-	log.Println("server gracefully shutdown")
-	close(down)
+	freeFunc()
 }
 
 func ping(c *gin.Context) {
