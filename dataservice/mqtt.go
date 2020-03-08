@@ -46,7 +46,7 @@ type reqbodyUnSubscribe struct {
 	ClientID string `json:"clientID"`
 }
 
-func mqttSubscribe(amqpChan *amqp.Channel, amqpQueue *amqp.Queue) func(c *gin.Context) {
+func mqttSubscribe(amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := tool.Error(recover()); err != nil {
@@ -77,7 +77,7 @@ func mqttSubscribe(amqpChan *amqp.Channel, amqpQueue *amqp.Queue) func(c *gin.Co
 		err = store.SaveClient("")
 		tool.CheckThenPanic(err, "store client")
 
-		err = mqttC.Subscribe(rb.ClientID, rb.Username, rb.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
+		err = mqttManager.Subscribe(rb.ClientID, rb.Username, rb.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
 		tool.CheckThenPanic(err, "subscribe")
 
 		c.JSON(200, gin.H{
@@ -87,29 +87,31 @@ func mqttSubscribe(amqpChan *amqp.Channel, amqpQueue *amqp.Queue) func(c *gin.Co
 	}
 }
 
-func mqttUnSubscribe(c *gin.Context) {
-	defer func() {
-		if err := tool.Error(recover()); err != nil {
-			log.Println(err.Error())
-			c.JSON(200, gin.H{
-				"code":    "no",
-				"message": err.Error(),
-			})
-		}
-	}()
+func mqttUnSubscribe(mqttManager *mqttC.Manager) func(c *gin.Context) {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := tool.Error(recover()); err != nil {
+				log.Println(err.Error())
+				c.JSON(200, gin.H{
+					"code":    "no",
+					"message": err.Error(),
+				})
+			}
+		}()
 
-	var rb reqbodyUnSubscribe
-	err := c.BindJSON(rb)
-	tool.CheckThenPanic(err, "parse request body")
+		var rb reqbodyUnSubscribe
+		err := c.BindJSON(rb)
+		tool.CheckThenPanic(err, "parse request body")
 
-	// TODO save postgres
+		// TODO save postgres
 
-	mqttC.UnSubscribe(rb.ClientID)
+		mqttManager.UnSubscribe(rb.ClientID)
 
-	c.JSON(200, gin.H{
-		"code":    "ok",
-		"message": "success",
-	})
+		c.JSON(200, gin.H{
+			"code":    "ok",
+			"message": "success",
+		})
+	}
 }
 
 // pushFunc push message to message queue

@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"database/sql"
+	"dataservice/connector/mqtt"
 	"dataservice/tool"
 	"fmt"
 	"log"
@@ -19,12 +20,6 @@ import (
 	"github.com/streadway/amqp"
 )
 
-// resources
-// var db *sql.DB
-// var amqpConn *amqp.Connection
-// var amqpChan *amqp.Channel
-// var amqpQueue amqp.Queue
-
 func main() {
 	down := make(chan struct{})
 
@@ -33,7 +28,9 @@ func main() {
 	loadData(db)
 
 	go pull(down, db, amqpChan, amqpQueue)
-	serve(serverPort, down, clean, amqpChan, amqpQueue)
+
+	mqttManager := mqtt.NewManager()
+	serve(serverPort, down, clean, amqpChan, amqpQueue, mqttManager)
 }
 
 func loadConfig() (serverPort, pgConnStr, amqpConnStr string) {
@@ -48,22 +45,12 @@ func loadConfig() (serverPort, pgConnStr, amqpConnStr string) {
 		tool.CheckThenPrint(err, "read config file")
 	}
 
-	viper.SetDefault("server.port", "8000")
 	serverPort = viper.GetString("server.port")
 	log.Printf("config of server port -- %s", serverPort)
 
-	viper.SetDefault("postgres.user", "guest")
-	viper.SetDefault("postgres.pass", "guest")
-	viper.SetDefault("postgres.host", "localhost")
-	viper.SetDefault("postgres.port", "5432")
-	viper.SetDefault("postgres.db", "thingspanel")
 	pgConnStr = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", viper.GetString("postgres.user"), viper.GetString("postgres.pass"), viper.GetString("postgres.host"), viper.GetString("postgres.port"), viper.GetString("postgres.db"))
 	log.Printf("config of postgres -- %s", pgConnStr)
 
-	viper.SetDefault("amqp.user", "guest")
-	viper.SetDefault("amqp.pass", "guest")
-	viper.SetDefault("amqp.host", "localhost")
-	viper.SetDefault("amqp.port", "5672")
 	amqpConnStr = fmt.Sprintf("amqp://%s:%s@%s:%s/", viper.GetString("amqp.user"), viper.GetString("amqp.pass"), viper.GetString("amqp.host"), viper.GetString("amqp.port"))
 	log.Printf("config of amqp -- %s", amqpConnStr)
 
@@ -133,13 +120,13 @@ func loadData(db *sql.DB) {
 }
 
 // serve server
-func serve(serverPort string, down chan struct{}, freeFunc func(), amqpChan *amqp.Channel, amqpQueue *amqp.Queue) {
+func serve(serverPort string, down chan struct{}, freeFunc func(), amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqtt.Manager) {
 	router := gin.Default()
 
 	router.GET("/ping", ping)
 
-	router.POST("/mqtt/unsubscribe", mqttUnSubscribe)
-	router.POST("/mqtt/subscribe", mqttSubscribe(amqpChan, amqpQueue))
+	router.POST("/mqtt/unsubscribe", mqttUnSubscribe(mqttManager))
+	router.POST("/mqtt/subscribe", mqttSubscribe(amqpChan, amqpQueue, mqttManager))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", serverPort),

@@ -20,25 +20,29 @@ type client struct {
 	chMsg      chan mqtt.Message
 }
 
-type clients struct {
-	sync.RWMutex
+// Manager ...
+type Manager struct {
+	lock      sync.RWMutex
 	mapClient map[string]*client
 }
 
-var _Clients = clients{
-	mapClient: make(map[string]*client),
+// NewManager ...
+func NewManager() *Manager {
+	return &Manager{
+		mapClient: make(map[string]*client),
+	}
 }
 
 // get client
-func (_clients *clients) getClient(clientID string) *client {
-	_clients.RLock()
-	defer _clients.RUnlock()
+func (_manager *Manager) getClient(clientID string) *client {
+	_manager.lock.RLock()
+	defer _manager.lock.RUnlock()
 
-	return _clients.mapClient[clientID]
+	return _manager.mapClient[clientID]
 }
 
 // fetch or create it
-func (_clients *clients) addClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
+func (_manager *Manager) addClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
 	_client := client{
 		username:  username,
 		password:  password,
@@ -58,43 +62,39 @@ func (_clients *clients) addClient(clientID, username, password string, mapBroke
 	})
 	_client.mqttClient = mqtt.NewClient(opts)
 
-	_clients.Lock()
+	_manager.lock.Lock()
 	// delete old
-	old := _clients.mapClient[clientID]
+	old := _manager.mapClient[clientID]
 	if old != nil {
 		close(old.chMsg)
 	}
-	delete(_clients.mapClient, clientID)
+	delete(_manager.mapClient, clientID)
 
 	// add new
-	_clients.mapClient[clientID] = &_client
-	_clients.Unlock()
+	_manager.mapClient[clientID] = &_client
+	_manager.lock.Unlock()
 
 	return &_client
 }
 
-func (_clients *clients) delClient(clientID string) {
-	_clients.Lock()
-	defer _clients.Unlock()
+func (_manager *Manager) delClient(clientID string) {
+	_manager.lock.Lock()
+	defer _manager.lock.Unlock()
 
-	_client := _clients.mapClient[clientID]
+	_client := _manager.mapClient[clientID]
 	if _client != nil {
 		close(_client.chMsg)
 	}
-	delete(_clients.mapClient, clientID)
+	delete(_manager.mapClient, clientID)
 }
 
 // Subscribe ...
-func Subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
-	return _Clients.subscribe(clientID, username, password, mapBroker, mapTopic, msgProc)
-}
-
-func (_clients *clients) subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
+func (_manager *Manager) Subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
 	defer func() {
 		err = tool.Error(recover())
 	}()
 
-	_client := _clients.addClient(clientID, username, password, mapBroker, mapTopic)
+	_client := _manager.addClient(clientID, username, password, mapBroker, mapTopic)
 	if token := _client.mqttClient.Connect(); token.Wait() {
 		tool.CheckThenPanic(token.Error(), "client connect")
 	}
@@ -134,10 +134,6 @@ func (_clients *clients) subscribe(clientID, username, password string, mapBroke
 }
 
 // UnSubscribe ...
-func UnSubscribe(clientID string) {
-	_Clients.unSubscribe(clientID)
-}
-
-func (_clients *clients) unSubscribe(clientID string) {
-	_clients.delClient(clientID)
+func (_manager *Manager) UnSubscribe(clientID string) {
+	_manager.delClient(clientID)
 }
