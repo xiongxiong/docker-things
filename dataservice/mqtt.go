@@ -142,6 +142,10 @@ func pull(down chan<- struct{}, db *sql.DB, amqpChan *amqp.Channel, amqpQueue *a
 	log.Printf("waiting for messages")
 	for msg := range msgs {
 		log.Printf("received a message: %s", msg.Body)
+		var sMsg store.Message
+		err := json.Unmarshal(msg.Body, &sMsg)
+		tool.ErrorThenPanic(err, "unmarshal store message")
+
 		go func() {
 			defer func() {
 				if err := tool.Error(recover()); err != nil {
@@ -149,9 +153,6 @@ func pull(down chan<- struct{}, db *sql.DB, amqpChan *amqp.Channel, amqpQueue *a
 				}
 			}()
 
-			var sMsg store.Message
-			err := json.Unmarshal(msg.Body, &sMsg)
-			tool.ErrorThenPanic(err, "unmarshal store message")
 			store.PersistentMessage(db, &sMsg)
 		}()
 	}

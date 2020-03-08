@@ -15,8 +15,8 @@ CREATE INDEX idx_payload ON messages USING GIN (payload);
 CREATE TABLE public.client (
         -- id (uuid)
         id char(36) PRIMARY KEY,
-        -- is closed
-        closed boolean,
+        -- is stopped
+        stopped boolean,
         -- system user id
         userID text NOT NULL,
         -- client config

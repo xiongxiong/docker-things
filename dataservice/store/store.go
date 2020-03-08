@@ -25,12 +25,26 @@ type Message struct {
 }
 
 // ValidateClientID validate clientID
-func ValidateClientID(userID, clientID string) bool {
-	return true
+func ValidateClientID(db *sql.DB, userID, clientID string) (bool, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var client Client
+	err := db.QueryRowContext(ctx, `SELECT userID FROM public.client WHERE id = $1;`, clientID).Scan(&client)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	if client.UserID == userID {
+		return true, nil
+	}
+	return false, nil
 }
 
 // SaveClient save client
-func SaveClient(userID string) (err error) {
+func SaveClient(db *sql.DB, userID string) (err error) {
 	return
 }
 
