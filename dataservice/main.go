@@ -20,20 +20,20 @@ import (
 )
 
 // resources
-var db *sql.DB
-var amqpConn *amqp.Connection
-var amqpChan *amqp.Channel
-var amqpQueue amqp.Queue
+// var db *sql.DB
+// var amqpConn *amqp.Connection
+// var amqpChan *amqp.Channel
+// var amqpQueue amqp.Queue
 
 func main() {
 	down := make(chan struct{})
 
 	serverPort, pgConnStr, amqpConnStr := loadConfig()
-	drop := _Resources.make(serverPort, pgConnStr, amqpConnStr)
-	_Resources.loadData()
+	clean, db, amqpChan, amqpQueue := build(serverPort, pgConnStr, amqpConnStr)
+	loadData(db)
 
-	go _Resources.pull(down)
-	_Resources.serve(serverPort, down, drop)
+	go pull(down, db, amqpChan, amqpQueue)
+	serve(serverPort, down, clean, amqpChan, amqpQueue)
 }
 
 func loadConfig() (serverPort, pgConnStr, amqpConnStr string) {
@@ -70,86 +70,76 @@ func loadConfig() (serverPort, pgConnStr, amqpConnStr string) {
 	return
 }
 
-// make resources
-func (_resources *resources) make(serverPort, pgConnStr, amqpConnStr string) func() {
-	log.Println("make resources")
+// build resources
+func build(serverPort, pgConnStr, amqpConnStr string) (clean func(), db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue) {
+	log.Println("build resources")
 
 	var err error
-	var dropSteps list.List
+	var cleanSteps list.List
 
-	for i := 0; i < 10; i++ {
-		_resources.db, err = sql.Open("postgres", pgConnStr)
-		if err != nil {
-			log.Println("open postgres failure, retry after 3 seconds")
-			time.Sleep(3 * time.Second)
-		} else {
-			break
-		}
-	}
+	// TODO check db is open
+	db, err = sql.Open("postgres", pgConnStr)
 	tool.CheckThenPanic(err, "open data source")
-	dropSteps.PushBack(func() {
-		if _resources.db != nil {
-			tool.CheckThenPrint(_resources.db.Close(), "close data source")
+	cleanSteps.PushBack(func() {
+		if db != nil {
+			tool.CheckThenPrint(db.Close(), "close data source")
 		}
 	})
-	_resources.db.SetConnMaxLifetime(0)
-	_resources.db.SetMaxIdleConns(3)
-	_resources.db.SetMaxOpenConns(3)
+	db.SetConnMaxLifetime(0)
+	db.SetMaxIdleConns(3)
+	db.SetMaxOpenConns(3)
 
-	for i := 0; i < 10; i++ {
-		_resources.amqpConn, err = amqp.Dial(amqpConnStr)
-		if err != nil {
-			log.Println("open rabbitmq failure, retry after 3 seconds")
-			time.Sleep(3 * time.Second)
-		} else {
-			break
-		}
-	}
+	// TODO check amqp is open
+	var amqpConn *amqp.Connection
+	amqpConn, err = amqp.Dial(amqpConnStr)
 	tool.CheckThenPanic(err, "connect amqp")
-	dropSteps.PushBack(func() {
-		if _resources.amqpConn != nil {
-			tool.CheckThenPrint(_resources.amqpConn.Close(), "close amqp connection")
+	cleanSteps.PushBack(func() {
+		if amqpConn != nil {
+			tool.CheckThenPrint(amqpConn.Close(), "close amqp connection")
 		}
 	})
 
-	_resources.amqpChan, err = _resources.amqpConn.Channel()
+	amqpChan, err = amqpConn.Channel()
 	tool.CheckThenPanic(err, "open a channel")
-	dropSteps.PushBack(func() {
-		if _resources.amqpChan != nil {
-			tool.CheckThenPrint(_resources.amqpChan.Close(), "close amqp channel")
+	cleanSteps.PushBack(func() {
+		if amqpChan != nil {
+			tool.CheckThenPrint(amqpChan.Close(), "close amqp channel")
 		}
 	})
 
-	_resources.amqpQueue, err = _resources.amqpChan.QueueDeclare("postgres", true, false, false, false, nil)
+	var _amqpQueue amqp.Queue
+	_amqpQueue, err = amqpChan.QueueDeclare("postgres", true, false, false, false, nil)
 	tool.CheckThenPanic(err, "declare a queue")
+	amqpQueue = &_amqpQueue
 
-	return func() {
+	clean = func() {
 		log.Println("Release resources")
-
-		for freeStep := dropSteps.Back(); freeStep != nil; freeStep = freeStep.Prev() {
+		for freeStep := cleanSteps.Back(); freeStep != nil; freeStep = freeStep.Prev() {
 			if fc, ok := freeStep.Value.(func()); ok {
 				fc()
 			}
 		}
 	}
+
+	return
 }
 
-func (_resources *resources) loadData() {
-	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// defer cancel()
-
-	// _, err := _resources.db.ExecContext(ctx, `insert into messages (msg) values ($1);`, message)
-	// tool.CheckThenPrint(err, "persistent message")
+func loadData(db *sql.DB) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// TODO load data
+	_, err := db.ExecContext(ctx, `insert into messages (msg) values ($1);`, "")
+	tool.CheckThenPrint(err, "persistent message")
 }
 
 // serve server
-func (_resources *resources) serve(serverPort string, down chan struct{}, freeFunc func()) {
+func serve(serverPort string, down chan struct{}, freeFunc func(), amqpChan *amqp.Channel, amqpQueue *amqp.Queue) {
 	router := gin.Default()
 
 	router.GET("/ping", ping)
 
-	router.POST("/mqtt/unsubscribe", _resources.mqttUnSubscribe)
-	router.POST("/mqtt/subscribe", _resources.mqttSubscribe)
+	router.POST("/mqtt/unsubscribe", mqttUnSubscribe)
+	router.POST("/mqtt/subscribe", mqttSubscribe(amqpChan, amqpQueue))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", serverPort),
