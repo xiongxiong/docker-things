@@ -1,4 +1,4 @@
-package mqtt_test
+package main_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestMqtt(t *testing.T) {
+func TestSrc(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Mqtt Suite")
+	RunSpecs(t, "Src Suite")
 }

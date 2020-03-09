@@ -10,7 +10,7 @@ FROM golang:alpine
 # add dataservice
 WORKDIR /home
 COPY config/config.yml .
-COPY bin/dataservice .
+COPY ../bin/dataservice .
 
 # add docker-compose-wait tool
 ENV WAIT_VERSION 2.7.3
