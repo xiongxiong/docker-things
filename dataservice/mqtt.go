@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	mqttC "dataservice/connector/mqtt"
 	"dataservice/store"
@@ -15,8 +16,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
-type reqbodySubscribe struct {
-	ClientID string   `json:"clientID"`
+type client struct {
 	Username string   `json:"username"`
 	Password string   `json:"password"`
 	Brokers  []string `json:"brokers"`
@@ -26,9 +26,14 @@ type reqbodySubscribe struct {
 	} `json:"topics"`
 }
 
+type reqbodySubscribe struct {
+	ClientID string `json:"clientID"`
+	Client   client `json:"client"`
+}
+
 func (rbSubscribe *reqbodySubscribe) getBrokers() map[string]struct{} {
 	brokers := make(map[string]struct{})
-	for _, v := range rbSubscribe.Brokers {
+	for _, v := range rbSubscribe.Client.Brokers {
 		brokers[v] = struct{}{}
 	}
 	return brokers
@@ -36,7 +41,7 @@ func (rbSubscribe *reqbodySubscribe) getBrokers() map[string]struct{} {
 
 func (rbSubscribe *reqbodySubscribe) getTopics() map[string]byte {
 	topics := make(map[string]byte)
-	for _, p := range rbSubscribe.Topics {
+	for _, p := range rbSubscribe.Client.Topics {
 		topics[p.Topic] = p.Qos
 	}
 	return topics
@@ -46,7 +51,38 @@ type reqbodyUnSubscribe struct {
 	ClientID string `json:"clientID"`
 }
 
-func mqttSubscribe(amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) func(c *gin.Context) {
+func loadClients(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rows, err := db.QueryContext(ctx, "SELECT id, userID, payload FROM public.client WHERE stopped = 'false'")
+	tool.CheckThenPanic(err, "load data")
+	defer rows.Close()
+
+	clients := make([]reqbodySubscribe, 0)
+	for rows.Next() {
+		var id, userID, payload string
+		err = rows.Scan(id, userID, payload)
+		tool.CheckThenPanic(err, "load clients -- row scan")
+
+		var c client
+		err = json.Unmarshal([]byte(payload), &c)
+		tool.CheckThenPanic(err, "load clients -- json unmarshal")
+
+		clients = append(clients, reqbodySubscribe{
+			ClientID: id,
+			Client:   c,
+		})
+	}
+	tool.CheckThenPanic(rows.Err(), "load clients")
+
+	for _, rb := range clients {
+		err = mqttManager.Subscribe(rb.ClientID, rb.Client.Username, rb.Client.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
+		tool.CheckThenPanic(err, "load clients -- client subscribe")
+	}
+}
+
+func mqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := tool.Error(recover()); err != nil {
@@ -63,7 +99,9 @@ func mqttSubscribe(amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *m
 		tool.CheckThenPanic(err, "parse request body")
 
 		if len(rb.ClientID) != 0 {
-			isValid := store.ValidateClientID("", rb.ClientID)
+			// TODO process userID
+			isValid, err := store.ValidateClientID(db, "--", rb.ClientID)
+			tool.CheckThenPanic(err, "validate client id")
 			if isValid == false {
 				c.JSON(200, gin.H{
 					"code":    "no",
@@ -74,10 +112,12 @@ func mqttSubscribe(amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *m
 			rb.ClientID = uuid.New().String()
 		}
 
-		err = store.SaveClient("")
+		clientJSON, err := json.Marshal(rb.Client)
+		tool.CheckThenPanic(err, "json marshal client")
+		err = store.SaveClient(db, "--", rb.ClientID, string(clientJSON))
 		tool.CheckThenPanic(err, "store client")
 
-		err = mqttManager.Subscribe(rb.ClientID, rb.Username, rb.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
+		err = mqttManager.Subscribe(rb.ClientID, rb.Client.Username, rb.Client.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
 		tool.CheckThenPanic(err, "subscribe")
 
 		c.JSON(200, gin.H{
@@ -87,7 +127,7 @@ func mqttSubscribe(amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *m
 	}
 }
 
-func mqttUnSubscribe(mqttManager *mqttC.Manager) func(c *gin.Context) {
+func mqttUnSubscribe(db *sql.DB, mqttManager *mqttC.Manager) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := tool.Error(recover()); err != nil {
@@ -103,7 +143,8 @@ func mqttUnSubscribe(mqttManager *mqttC.Manager) func(c *gin.Context) {
 		err := c.BindJSON(rb)
 		tool.CheckThenPanic(err, "parse request body")
 
-		// TODO save postgres
+		err = store.StopClient(db, rb.ClientID)
+		tool.CheckThenPanic(err, "stop client in store")
 
 		mqttManager.UnSubscribe(rb.ClientID)
 

@@ -67,6 +67,13 @@ services:
         depends_on: 
             - rabbitmq
             - postgres
+        command: sh -c "/home/wait && /home/dataservice"
+        environment: 
+            - WAIT_HOSTS=rabbitmq:5672, postgres:5432
+            - WAIT_HOSTS_TIMEOUT=300
+            - WAIT_SLEEP_INTERVAL=10
+            - WAIT_BEFORE_HOSTS=10
+            - WAIT_HOST_CONNECT_TIMEOUT=30
 
 networks: 
     backend:

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"dataservice/connector/mqtt"
+	mqttC "dataservice/connector/mqtt"
 	"dataservice/tool"
 	"fmt"
 	"log"
@@ -25,12 +26,13 @@ func main() {
 
 	serverPort, pgConnStr, amqpConnStr := loadConfig()
 	clean, db, amqpChan, amqpQueue := build(serverPort, pgConnStr, amqpConnStr)
-	loadData(db)
+	mqttManager := mqtt.NewManager()
+
+	loadData(db, amqpChan, amqpQueue, mqttManager)
 
 	go pull(down, db, amqpChan, amqpQueue)
 
-	mqttManager := mqtt.NewManager()
-	serve(serverPort, down, clean, amqpChan, amqpQueue, mqttManager)
+	serve(serverPort, down, clean, db, amqpChan, amqpQueue, mqttManager)
 }
 
 func loadConfig() (serverPort, pgConnStr, amqpConnStr string) {
@@ -64,7 +66,6 @@ func build(serverPort, pgConnStr, amqpConnStr string) (clean func(), db *sql.DB,
 	var err error
 	var cleanSteps list.List
 
-	// TODO check db is open
 	db, err = sql.Open("postgres", pgConnStr)
 	tool.CheckThenPanic(err, "open data source")
 	cleanSteps.PushBack(func() {
@@ -76,7 +77,6 @@ func build(serverPort, pgConnStr, amqpConnStr string) (clean func(), db *sql.DB,
 	db.SetMaxIdleConns(3)
 	db.SetMaxOpenConns(3)
 
-	// TODO check amqp is open
 	var amqpConn *amqp.Connection
 	amqpConn, err = amqp.Dial(amqpConnStr)
 	tool.CheckThenPanic(err, "connect amqp")
@@ -111,22 +111,20 @@ func build(serverPort, pgConnStr, amqpConnStr string) (clean func(), db *sql.DB,
 	return
 }
 
-func loadData(db *sql.DB) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	// TODO load data
-	_, err := db.ExecContext(ctx, `insert into messages (msg) values ($1);`, "")
-	tool.CheckThenPrint(err, "persistent message")
+func loadData(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) {
+	log.Println("load data")
+
+	loadClients(db, amqpChan, amqpQueue, mqttManager)
 }
 
 // serve server
-func serve(serverPort string, down chan struct{}, freeFunc func(), amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqtt.Manager) {
+func serve(serverPort string, down chan struct{}, freeFunc func(), db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqtt.Manager) {
 	router := gin.Default()
 
 	router.GET("/ping", ping)
 
-	router.POST("/mqtt/unsubscribe", mqttUnSubscribe(mqttManager))
-	router.POST("/mqtt/subscribe", mqttSubscribe(amqpChan, amqpQueue, mqttManager))
+	router.POST("/mqtt/unsubscribe", mqttUnSubscribe(db, mqttManager))
+	router.POST("/mqtt/subscribe", mqttSubscribe(db, amqpChan, amqpQueue, mqttManager))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", serverPort),

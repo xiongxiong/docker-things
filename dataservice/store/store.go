@@ -3,13 +3,15 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
 // Client info
 type Client struct {
 	ID        string    `json:"id"`
-	Closed    bool      `json:"closed"`
+	Stopped   bool      `json:"stopped"`
 	UserID    string    `json:"userID"`
 	Payload   string    `json:"payload"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -25,12 +27,12 @@ type Message struct {
 }
 
 // ValidateClientID validate clientID
-func ValidateClientID(db *sql.DB, userID, clientID string) (bool, error) {
+func ValidateClientID(db *sql.DB, userID, clientID string) (valid bool, err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var client Client
-	err := db.QueryRowContext(ctx, `SELECT userID FROM public.client WHERE id = $1;`, clientID).Scan(&client)
+	err = db.QueryRowContext(ctx, `SELECT userID FROM public.client WHERE id = $1`, clientID).Scan(&client)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -44,15 +46,62 @@ func ValidateClientID(db *sql.DB, userID, clientID string) (bool, error) {
 }
 
 // SaveClient save client
-func SaveClient(db *sql.DB, userID string) (err error) {
+func SaveClient(db *sql.DB, userID, clientID, clientJSON string) (err error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result, err := db.ExecContext(ctx, `INSERT INTO public.client (id, userID, payload) VALUES ($1, $2, $3, $4)`, clientID, userID, clientJSON)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("save client -- should insert one row, but inserted %d rows", rows)
+	}
+	return
+}
+
+// StopClient save client
+func StopClient(db *sql.DB, clientID string) (err error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result, err := db.ExecContext(ctx, `UPDATE public.client SET stopped = 'true' WHERE id = $1;`, clientID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("stop client -- should insert one row, but inserted %d rows", rows)
+	}
 	return
 }
 
 // PersistentMessage persistent message
-func PersistentMessage(db *sql.DB, msg *Message) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func PersistentMessage(db *sql.DB, msg *Message) (err error) {
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, err := db.ExecContext(ctx, `insert into t_message (message) values ($1);`, msg)
-	return err
+	messageJSON, err := json.Marshal(msg.Payload)
+	if err != nil {
+		return err
+	}
+	result, err := db.ExecContext(ctx, `INSERT INTO public.message (clientID, topic, payload) values ($1, $2, $3);`, msg.ClientID, msg.Topic, string(messageJSON))
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("persistent message -- should insert one row, but inserted %d rows", rows)
+	}
+	return
 }
