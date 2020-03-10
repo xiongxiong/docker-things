@@ -1,12 +1,13 @@
 package mqtt_test
 
 import (
-	"dataservice/connector/mqtt"
+	mqttC "dataservice/connector/mqtt"
 	"os/exec"
+	"sync/atomic"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	// . "github.com/onsi/gomega/gstruct"
 )
 
 var _ = BeforeSuite(func() {
@@ -22,64 +23,79 @@ var _ = AfterSuite(func() {
 })
 
 var _ = Describe("mqtt", func() {
-	manager := mqtt.NewManager()
-	brok := "tcp://localhost:1883"
-	topi := "myTopic"
+	manager := mqttC.NewManager()
 
-	FDescribe("subscribe", func() {
-		It("one topic", func() {
+	It("normal flow", func() {
+		clientID := "myClientID"
+		username := ""
+		password := ""
+		mapBroker := map[string]struct{}{
+			"tcp://localhost:1883": struct{}{},
+		}
+		mapTopic := map[string]byte{
+			"myTopic": byte(2),
+		}
+		var msgCount int32
+		msgProc := func(clientID string, msg mqtt.Message) {
+			atomic.AddInt32(&msgCount, 1)
+		}
 
-			By("subscribe")
-			err := manager.Subscribe()
-			Ω(err).ToNot(HaveOccurred(), "cannot subscribe")
+		By("client subscribe")
+		err := manager.Subscribe(clientID, username, password, mapBroker, mapTopic, msgProc)
+		Ω(err).ToNot(HaveOccurred(), "cannot subscribe")
 
-			// By("unsubscribe")
-			// err = UnSubBrokerTopic(brok, topi)
-			// Ω(err).ToNot(HaveOccurred(), "cannot unsubscribe")
-			// Ω(_broker.chQuit).To(BeClosed())
-			// Eventually(func() int {
-			// 	return len(_Global.mapConn)
-			// }).Should(Equal(0))
-		})
+		By("publish message 1")
+		cmd := exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopic' -m 'hello'"`)
+		err = cmd.Run()
+		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
+
+		By("receive message 1")
+		Eventually(func() int {
+			return int(msgCount)
+		}).Should(Equal(1))
+
+		By("same client resubscribe")
+		mapTopic = map[string]byte{
+			"myTopic":    byte(2),
+			"myTopicNew": byte(2),
+		}
+		var msgCountNew int32
+		msgProc = func(clientID string, msg mqtt.Message) {
+			switch msg.Topic() {
+			case "myTopic":
+				atomic.AddInt32(&msgCount, 1)
+			case "myTopicNew":
+				atomic.AddInt32(&msgCountNew, 1)
+			}
+		}
+
+		By("publish message 2")
+		cmd = exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopicNew' -m 'hello'"`)
+		err = cmd.Run()
+		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
+
+		By("receive message 2")
+		Eventually(func() int {
+			return int(msgCount)
+		}).Should(Equal(1))
+		Eventually(func() int {
+			return int(msgCountNew)
+		}).Should(Equal(1))
+
+		By("publish message 3")
+		cmd = exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopic' -m 'hello'"`)
+		err = cmd.Run()
+		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
+
+		By("unsubscribe and message all processed before client close")
+		manager.UnSubscribe(clientID)
+		Eventually(func() int {
+			return int(msgCount)
+		}).Should(Equal(2))
+		Eventually(func() int {
+			return int(msgCountNew)
+		}).Should(Equal(1))
 	})
 
-	// Describe("publish and receive", func() {
-	// 	var chMsg chan string
-	// 	var _broker *broker
-
-	// 	BeforeEach(func() {
-	// 		chMsg = make(chan string)
-
-	// 		err := SubBrokerTopic(brok, topi, func(topic, message string) {
-	// 			chMsg <- message
-	// 		})
-	// 		Ω(err).ToNot(HaveOccurred(), "cannot subscribe")
-
-	// 		_broker = _Global.mapConn[brok]
-	// 		Ω(_broker).ToNot(BeNil())
-	// 	})
-
-	// 	AfterEach(func() {
-	// 		err := UnSubBrokerTopic(brok, topi)
-	// 		Ω(err).ToNot(HaveOccurred(), "cannot unsubscribe")
-
-	// 		close(chMsg)
-	// 	})
-
-	// 	It("should publish and receive message success", func() {
-	// 		By("publish")
-	// 		token := _broker.client.Publish(topi, byte(2), false, "hello")
-	// 		token.Wait()
-	// 		Ω(token.Error()).ToNot(HaveOccurred(), "cannot publish")
-
-	// 		By("receive")
-	// 		Ω(<-chMsg).To(Equal("hello"))
-	// 	})
-	// })
-
-	Describe("mixture", func() {
-
-	})
+	// TODO benchmark
 })
-
-// TODO test message all processed before client closed
