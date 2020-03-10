@@ -106,7 +106,10 @@ func (_manager *Manager) Subscribe(clientID, username, password string, mapBroke
 	go func() {
 		log.Printf("client [%s] listening ...", clientID)
 		for {
-			msg := <-_client.chMsg
+			msg, ok := <-_client.chMsg
+			if !ok {
+				break
+			}
 			if msgProc != nil {
 				go func() {
 					defer func() {
