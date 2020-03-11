@@ -18,6 +18,7 @@ type client struct {
 	mapTopic   map[string]byte
 	mqttClient mqtt.Client
 	chMsg      chan mqtt.Message
+	chStop     chan struct{}
 }
 
 // Manager ...
@@ -43,12 +44,23 @@ func (_manager *Manager) getClient(clientID string) *client {
 
 // fetch or create it
 func (_manager *Manager) addClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
+	_manager.delClient(clientID)
+	_manager.lock.Lock()
+	defer _manager.lock.Unlock()
+	_client := newClient(clientID, username, password, mapBroker, mapTopic)
+	_manager.mapClient[clientID] = _client
+
+	return _client
+}
+
+func newClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
 	_client := client{
 		username:  username,
 		password:  password,
 		mapBroker: mapBroker,
 		mapTopic:  mapTopic,
 		chMsg:     make(chan mqtt.Message),
+		chStop:    make(chan struct{}),
 	}
 
 	opts := mqtt.NewClientOptions()
@@ -62,18 +74,6 @@ func (_manager *Manager) addClient(clientID, username, password string, mapBroke
 	})
 	_client.mqttClient = mqtt.NewClient(opts)
 
-	_manager.lock.Lock()
-	// delete old
-	old := _manager.mapClient[clientID]
-	if old != nil {
-		close(old.chMsg)
-	}
-	delete(_manager.mapClient, clientID)
-
-	// add new
-	_manager.mapClient[clientID] = &_client
-	_manager.lock.Unlock()
-
 	return &_client
 }
 
@@ -83,7 +83,7 @@ func (_manager *Manager) delClient(clientID string) {
 
 	_client := _manager.mapClient[clientID]
 	if _client != nil {
-		close(_client.chMsg)
+		close(_client.chStop)
 	}
 	delete(_manager.mapClient, clientID)
 }
@@ -105,7 +105,17 @@ func (_manager *Manager) Subscribe(clientID, username, password string, mapBroke
 
 	go func() {
 		log.Printf("client [%s] listening ...", clientID)
-		for {
+
+		isStop := false
+	OUTER:
+		for !isStop {
+			select {
+			case <-_client.chStop:
+				isStop = true
+				break OUTER
+			default:
+			}
+
 			msg, ok := <-_client.chMsg
 			if !ok {
 				break
@@ -113,7 +123,7 @@ func (_manager *Manager) Subscribe(clientID, username, password string, mapBroke
 			if msgProc != nil {
 				go func() {
 					defer func() {
-						err = tool.Error(recover())
+						err := tool.Error(recover())
 						tool.ErrorThenPrint(err, "message process")
 					}()
 					msgProc(clientID, msg)

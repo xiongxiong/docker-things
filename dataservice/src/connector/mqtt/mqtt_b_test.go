@@ -4,6 +4,7 @@ import (
 	mqttC "dataservice/connector/mqtt"
 	"os/exec"
 	"sync/atomic"
+	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	. "github.com/onsi/ginkgo"
@@ -50,9 +51,9 @@ var _ = Describe("mqtt", func() {
 		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
 
 		By("receive message 1")
-		Eventually(func() int {
-			return int(msgCount)
-		}).Should(Equal(1))
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&msgCount)
+		}).Should(Equal(int32(1)))
 
 		By("same client resubscribe")
 		mapTopic = map[string]byte{
@@ -77,26 +78,29 @@ var _ = Describe("mqtt", func() {
 		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
 
 		By("receive message 2")
-		Eventually(func() int {
-			return int(msgCount)
-		}).Should(Equal(1))
-		Eventually(func() int {
-			return int(msgCountNew)
-		}).Should(Equal(1))
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&msgCount)
+		}).Should(Equal(int32(1)))
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&msgCountNew)
+		}).Should(Equal(int32(1)))
+
+		By("unsubscribe")
+		manager.UnSubscribe(clientID)
+		time.Sleep(3 * time.Second)
 
 		By("publish message 3")
 		cmd = exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopic' -m 'hello'"`)
 		err = cmd.Run()
 		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
 
-		By("unsubscribe and message all processed before client close")
-		manager.UnSubscribe(clientID)
-		Eventually(func() int {
-			return int(msgCount)
-		}).Should(Equal(2))
-		Eventually(func() int {
-			return int(msgCountNew)
-		}).Should(Equal(1))
+		By("does not receive message after unsubscription")
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&msgCount)
+		}).Should(Equal(int32(2)))
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&msgCountNew)
+		}).Should(Equal(int32(1)))
 	})
 
 	// TODO benchmark
