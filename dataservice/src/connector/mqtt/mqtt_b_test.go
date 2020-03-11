@@ -68,6 +68,8 @@ var _ = Describe("mqtt", func() {
 				atomic.AddInt32(&msgCountNew, 1)
 			}
 		}
+		err = manager.Subscribe(clientID, username, password, mapBroker, mapTopic, msgProc)
+		Ω(err).ToNot(HaveOccurred(), "cannot subscribe")
 
 		By("publish message 2")
 		cmd = exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopicNew' -m 'hello'"`)
