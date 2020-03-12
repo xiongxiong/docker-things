@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"dataservice/connector/mqtt"
 	mqttC "dataservice/connector/mqtt"
+	"dataservice/controller"
+	"dataservice/docs"
 	"dataservice/tool"
 	"fmt"
 	"log"
@@ -19,6 +21,8 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/spf13/viper"
 	"github.com/streadway/amqp"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	"github.com/swaggo/gin-swagger/swaggerFiles"
 )
 
 func main() {
@@ -30,7 +34,7 @@ func main() {
 
 	loadData(db, amqpChan, amqpQueue, mqttManager)
 
-	go pull(down, db, amqpChan, amqpQueue)
+	go controller.Pull(down, db, amqpChan, amqpQueue)
 
 	serve(serverPort, down, clean, db, amqpChan, amqpQueue, mqttManager)
 }
@@ -114,21 +118,30 @@ func build(serverPort, pgConnStr, amqpConnStr string) (clean func(), db *sql.DB,
 func loadData(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) {
 	log.Println("load data")
 
-	loadClients(db, amqpChan, amqpQueue, mqttManager)
+	controller.LoadClients(db, amqpChan, amqpQueue, mqttManager)
 }
 
 // serve server
 func serve(serverPort string, down chan struct{}, freeFunc func(), db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqtt.Manager) {
-	router := gin.Default()
+	docs.SwaggerInfo.Title = "DataService API"
+	docs.SwaggerInfo.Description = "DataService API"
+	docs.SwaggerInfo.Version = "1.0"
+	docs.SwaggerInfo.Host = "localhost"
+	docs.SwaggerInfo.BasePath = "/v2"
+	docs.SwaggerInfo.Schemes = []string{"http", "https"}
 
-	router.GET("/ping", ping)
+	r := gin.Default()
 
-	router.POST("/mqtt/unsubscribe", mqttUnSubscribe(db, mqttManager))
-	router.POST("/mqtt/subscribe", mqttSubscribe(db, amqpChan, amqpQueue, mqttManager))
+	v1 := r.Group("/api/v1")
+	v1.GET("/ping", ping)
+	v1.POST("/mqtt/subscribe", controller.MqttSubscribe(db, amqpChan, amqpQueue, mqttManager))
+	v1.POST("/mqtt/unsubscribe", controller.MqttUnSubscribe(db, mqttManager))
+
+	v1.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", serverPort),
-		Handler: router,
+		Handler: r,
 	}
 
 	go gracefullyShutdown(srv, freeFunc)

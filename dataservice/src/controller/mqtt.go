@@ -1,4 +1,4 @@
-package main
+package controller
 
 import (
 	"context"
@@ -51,7 +51,8 @@ type reqbodyUnSubscribe struct {
 	ClientID string `json:"clientID"`
 }
 
-func loadClients(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) {
+// LoadClients load clients from database
+func LoadClients(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -82,7 +83,20 @@ func loadClients(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqtt
 	}
 }
 
-func mqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) func(c *gin.Context) {
+// MqttSubscribe mqtt subscription
+// @Summary Show a account
+// @Description get string by ID
+// @ID get-string-by-int
+// @Accept  json
+// @Produce  json
+// @Param id path int true "Account ID"
+// @Success 200 {object} model.Account
+// @Header 200 {string} Token "qwerty"
+// @Failure 400 {object} httputil.HTTPError
+// @Failure 404 {object} httputil.HTTPError
+// @Failure 500 {object} httputil.HTTPError
+// @Router /accounts/{id} [get]
+func MqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := tool.Error(recover()); err != nil {
@@ -127,7 +141,8 @@ func mqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mq
 	}
 }
 
-func mqttUnSubscribe(db *sql.DB, mqttManager *mqttC.Manager) func(c *gin.Context) {
+// MqttUnSubscribe mqtt unsubscription
+func MqttUnSubscribe(db *sql.DB, mqttManager *mqttC.Manager) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := tool.Error(recover()); err != nil {
@@ -175,8 +190,8 @@ func pushFunc(amqpChan *amqp.Channel, amqpQueue *amqp.Queue) func(clientID strin
 	}
 }
 
-// pull and process message
-func pull(down chan<- struct{}, db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue) {
+// Pull and process message
+func Pull(down chan<- struct{}, db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue) {
 	msgs, err := amqpChan.Consume(amqpQueue.Name, "", true, false, false, false, nil)
 	tool.CheckThenPanic(err, "register a consumer")
 

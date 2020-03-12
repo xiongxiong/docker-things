@@ -4,7 +4,6 @@ import (
 	mqttC "dataservice/connector/mqtt"
 	"os/exec"
 	"sync/atomic"
-	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	. "github.com/onsi/ginkgo"
@@ -16,7 +15,9 @@ var _ = BeforeSuite(func() {
 	err := cmd.Run()
 	Ω(err).NotTo(HaveOccurred(), "mosquitto cannot start")
 
-	time.Sleep(time.Second)
+	cmd = exec.Command("sh", "-c", "waitforit -host=localhost -port=1883 -timeout=20 -debug")
+	err = cmd.Run()
+	Ω(err).NotTo(HaveOccurred(), "wait for mosquitto")
 })
 
 var _ = AfterSuite(func() {
