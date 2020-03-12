@@ -15,6 +15,8 @@ var _ = BeforeSuite(func() {
 	cmd := exec.Command("sh", "-c", "docker run --detach --rm --name mosquitto --publish 1883:1883 eclipse-mosquitto")
 	err := cmd.Run()
 	Ω(err).NotTo(HaveOccurred(), "mosquitto cannot start")
+
+	time.Sleep(time.Second)
 })
 
 var _ = AfterSuite(func() {
@@ -45,12 +47,12 @@ var _ = Describe("mqtt", func() {
 		err := manager.Subscribe(clientID, username, password, mapBroker, mapTopic, msgProc)
 		Ω(err).ToNot(HaveOccurred(), "cannot subscribe")
 
-		By("publish message 1")
+		By("publish message 1 on myTopic")
 		cmd := exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopic' -m 'hello'"`)
 		err = cmd.Run()
 		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
 
-		By("receive message 1")
+		By("receive message 1 on myTopic")
 		Eventually(func() int32 {
 			return atomic.LoadInt32(&msgCount)
 		}).Should(Equal(int32(1)))
@@ -72,12 +74,12 @@ var _ = Describe("mqtt", func() {
 		err = manager.Subscribe(clientID, username, password, mapBroker, mapTopic, msgProc)
 		Ω(err).ToNot(HaveOccurred(), "cannot subscribe")
 
-		By("publish message 2")
+		By("publish message 1 on myTopicNew")
 		cmd = exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopicNew' -m 'hello'"`)
 		err = cmd.Run()
 		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
 
-		By("receive message 2")
+		By("receive message 1 on myTopicNew")
 		Eventually(func() int32 {
 			return atomic.LoadInt32(&msgCount)
 		}).Should(Equal(int32(1)))
@@ -85,11 +87,23 @@ var _ = Describe("mqtt", func() {
 			return atomic.LoadInt32(&msgCountNew)
 		}).Should(Equal(int32(1)))
 
+		By("publish message 2 on myTopic")
+		cmd = exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopic' -m 'hello'"`)
+		err = cmd.Run()
+		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")
+
+		By("receive message 2 on myTopic, should receive only once")
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&msgCount)
+		}).Should(Equal(int32(2)))
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&msgCountNew)
+		}).Should(Equal(int32(1)))
+
 		By("unsubscribe")
 		manager.UnSubscribe(clientID)
-		time.Sleep(3 * time.Second)
 
-		By("publish message 3")
+		By("publish message 3 on myTopic")
 		cmd = exec.Command("sh", "-c", `docker exec mosquitto sh -c "mosquitto_pub -t 'myTopic' -m 'hello'"`)
 		err = cmd.Run()
 		Ω(err).NotTo(HaveOccurred(), "mosquitto cannot publish")

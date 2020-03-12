@@ -4,8 +4,6 @@ import (
 	"reflect"
 	"sync"
 	"testing"
-
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 func TestManager_getClient(t *testing.T) {
@@ -180,18 +178,11 @@ func TestManager_delClient(t *testing.T) {
 			name: "exist",
 			fields: fields{
 				mapClient: map[string]*client{
-					"client": &client{
-						username:  "username",
-						password:  "password",
-						mapBroker: map[string]struct{}{},
-						mapTopic:  map[string]byte{},
-						chMsg:     make(chan mqtt.Message),
-						chStop:    make(chan struct{}),
-					},
+					"client": newClient("clientID", "username", "password", map[string]struct{}{}, map[string]byte{}),
 				},
 			},
 			args: args{
-				clientID: "client",
+				clientID: "clientID",
 			},
 			want: 0,
 		},
@@ -199,14 +190,7 @@ func TestManager_delClient(t *testing.T) {
 			name: "not exist",
 			fields: fields{
 				mapClient: map[string]*client{
-					"client": &client{
-						username:  "username",
-						password:  "password",
-						mapBroker: map[string]struct{}{},
-						mapTopic:  map[string]byte{},
-						chMsg:     make(chan mqtt.Message),
-						chStop:    make(chan struct{}),
-					},
+					"client": newClient("clientID", "username", "password", map[string]struct{}{}, map[string]byte{}),
 				},
 			},
 			args: args{

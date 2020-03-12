@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestSrc(t *testing.T) {
+func TestMQTT(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "mqtt suite")
 }

@@ -2,7 +2,6 @@ package mqtt
 
 import (
 	"dataservice/tool"
-	"fmt"
 	"log"
 	"sync"
 
@@ -18,7 +17,7 @@ type client struct {
 	mapTopic   map[string]byte
 	mqttClient mqtt.Client
 	chMsg      chan mqtt.Message
-	chStop     chan struct{}
+	chQuit     chan struct{}
 }
 
 // Manager ...
@@ -60,7 +59,7 @@ func newClient(clientID, username, password string, mapBroker map[string]struct{
 		mapBroker: mapBroker,
 		mapTopic:  mapTopic,
 		chMsg:     make(chan mqtt.Message),
-		chStop:    make(chan struct{}),
+		chQuit:    make(chan struct{}),
 	}
 
 	opts := mqtt.NewClientOptions()
@@ -83,7 +82,7 @@ func (_manager *Manager) delClient(clientID string) {
 
 	_client := _manager.mapClient[clientID]
 	if _client != nil {
-		close(_client.chStop)
+		close(_client.chQuit)
 	}
 	delete(_manager.mapClient, clientID)
 }
@@ -106,39 +105,24 @@ func (_manager *Manager) Subscribe(clientID, username, password string, mapBroke
 	go func() {
 		log.Printf("client [%s] listening ...", clientID)
 
-		isStop := false
-	OUTER:
-		for !isStop {
+		quit := false
+		for !quit {
 			select {
-			case <-_client.chStop:
-				isStop = true
-				break OUTER
-			default:
-			}
-
-			msg, ok := <-_client.chMsg
-			if !ok {
-				break
-			}
-			if msgProc != nil {
-				go func() {
-					defer func() {
-						err := tool.Error(recover())
-						tool.ErrorThenPrint(err, "message process")
+			case <-_client.chQuit:
+				quit = true
+			case msg := <-_client.chMsg:
+				if msgProc != nil {
+					go func() {
+						defer func() {
+							err := tool.Error(recover())
+							tool.ErrorThenPrint(err, "message process")
+						}()
+						msgProc(clientID, msg)
 					}()
-					msgProc(clientID, msg)
-				}()
+				}
 			}
 		}
 
-		log.Printf("client [%s] disconnecting ...", clientID)
-		var topics []string
-		for k := range _client.mapTopic {
-			topics = append(topics, k)
-		}
-		if token := _client.mqttClient.Unsubscribe(topics...); token.Wait() {
-			tool.CheckThenPrint(token.Error(), fmt.Sprintf("unsubscribe client [%s]", clientID))
-		}
 		_client.mqttClient.Disconnect(0)
 		log.Printf("client [%s] disconnected", clientID)
 	}()
