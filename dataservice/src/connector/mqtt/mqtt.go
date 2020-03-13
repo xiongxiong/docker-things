@@ -33,6 +33,14 @@ func NewManager() *Manager {
 	}
 }
 
+// ClientCount count of clients
+func (_manager *Manager) ClientCount() int {
+	_manager.lock.RLock()
+	defer _manager.lock.RUnlock()
+
+	return len(_manager.mapClient)
+}
+
 // get client
 func (_manager *Manager) getClient(clientID string) *client {
 	_manager.lock.RLock()

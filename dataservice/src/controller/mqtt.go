@@ -16,14 +16,16 @@ import (
 	"github.com/streadway/amqp"
 )
 
+type topic struct {
+	Topic string `json:"topic"`
+	Qos   byte   `json:"qos"`
+}
+
 type client struct {
 	Username string   `json:"username"`
 	Password string   `json:"password"`
 	Brokers  []string `json:"brokers"`
-	Topics   []struct {
-		Topic string `json:"topic"`
-		Qos   byte   `json:"qos"`
-	} `json:"topics"`
+	Topics   []topic  `json:"topics"`
 }
 
 type reqbodySubscribe struct {
@@ -51,9 +53,8 @@ type reqbodyUnSubscribe struct {
 	ClientID string `json:"clientID"`
 }
 
-// LoadClients load clients from database
-func LoadClients(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func loadClients(db *sql.DB) []reqbodySubscribe {
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	rows, err := db.QueryContext(ctx, "SELECT id, userID, payload FROM public.client WHERE stopped = 'false'")
@@ -63,7 +64,7 @@ func LoadClients(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqtt
 	clients := make([]reqbodySubscribe, 0)
 	for rows.Next() {
 		var id, userID, payload string
-		err = rows.Scan(id, userID, payload)
+		err = rows.Scan(&id, &userID, &payload)
 		tool.CheckThenPanic(err, "load clients -- row scan")
 
 		var c client
@@ -77,25 +78,20 @@ func LoadClients(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqtt
 	}
 	tool.CheckThenPanic(rows.Err(), "load clients")
 
+	return clients
+}
+
+// LoadClients load clients from database
+func LoadClients(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) {
+	clients := loadClients(db)
+
 	for _, rb := range clients {
-		err = mqttManager.Subscribe(rb.ClientID, rb.Client.Username, rb.Client.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
+		err := mqttManager.Subscribe(rb.ClientID, rb.Client.Username, rb.Client.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
 		tool.CheckThenPanic(err, "load clients -- client subscribe")
 	}
 }
 
 // MqttSubscribe mqtt subscription
-// @Summary Show a account
-// @Description get string by ID
-// @ID get-string-by-int
-// @Accept  json
-// @Produce  json
-// @Param id path int true "Account ID"
-// @Success 200 {object} model.Account
-// @Header 200 {string} Token "qwerty"
-// @Failure 400 {object} httputil.HTTPError
-// @Failure 404 {object} httputil.HTTPError
-// @Failure 500 {object} httputil.HTTPError
-// @Router /accounts/{id} [get]
 func MqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqttC.Manager) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		defer func() {

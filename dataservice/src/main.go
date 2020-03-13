@@ -7,7 +7,6 @@ import (
 	"dataservice/connector/mqtt"
 	mqttC "dataservice/connector/mqtt"
 	"dataservice/controller"
-	"dataservice/docs"
 	"dataservice/tool"
 	"fmt"
 	"log"
@@ -21,8 +20,6 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/spf13/viper"
 	"github.com/streadway/amqp"
-	ginSwagger "github.com/swaggo/gin-swagger"
-	"github.com/swaggo/gin-swagger/swaggerFiles"
 )
 
 func main() {
@@ -123,21 +120,12 @@ func loadData(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttMan
 
 // serve server
 func serve(serverPort string, down chan struct{}, freeFunc func(), db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mqttManager *mqtt.Manager) {
-	docs.SwaggerInfo.Title = "DataService API"
-	docs.SwaggerInfo.Description = "DataService API"
-	docs.SwaggerInfo.Version = "1.0"
-	docs.SwaggerInfo.Host = "localhost"
-	docs.SwaggerInfo.BasePath = "/v2"
-	docs.SwaggerInfo.Schemes = []string{"http", "https"}
-
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
 	v1.GET("/ping", ping)
 	v1.POST("/mqtt/subscribe", controller.MqttSubscribe(db, amqpChan, amqpQueue, mqttManager))
 	v1.POST("/mqtt/unsubscribe", controller.MqttUnSubscribe(db, mqttManager))
-
-	v1.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", serverPort),
