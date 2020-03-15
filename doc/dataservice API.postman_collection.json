@@ -1,0 +1,209 @@
+{
+	"info": {
+		"_postman_id": "933eaa4c-8f0a-4e31-b962-e692c10b286d",
+		"name": "dataservice API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "ping",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/ping",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"ping"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "mqtt unsubscribe",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\t\"clientID\": \"fcee34ba-2efb-4e8d-9cae-ddcb2d96d90e\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/mqtt/unsubscribe",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"mqtt",
+						"unsubscribe"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "mqtt subscribe",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\t\"client\": {\n\t\t\"brokers\": [\"tcp://localhost:1883\"],\n\t\t\"topics\": [{\"topic\": \"myTopic\", \"qos\": 2}]\n\t}\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/mqtt/subscribe",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"mqtt",
+						"subscribe"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "mqtt subscribe -- renew success",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"clientID\": \"2f850bb0-636c-4a22-96b4-5b4a52642a22\",\n\t\"client\": {\n\t\t\"brokers\": [\"tcp://localhost:1883\"],\n\t\t\"topics\": [{\"topic\": \"myTopicNew\", \"qos\": 2}]\n\t}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/mqtt/subscribe",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"mqtt",
+								"subscribe"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Date",
+							"value": "Sun, 15 Mar 2020 06:55:07 GMT"
+						},
+						{
+							"key": "Content-Length",
+							"value": "34"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"code\": \"ok\",\n    \"message\": \"success\"\n}"
+				},
+				{
+					"name": "mqtt subscribe - save success",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"client\": {\n\t\t\"brokers\": [\"tcp://localhost:1883\"],\n\t\t\"topics\": [{\"topic\": \"myTopic\", \"qos\": 2}]\n\t}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/mqtt/subscribe",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"mqtt",
+								"subscribe"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Date",
+							"value": "Sun, 15 Mar 2020 05:50:08 GMT"
+						},
+						{
+							"key": "Content-Length",
+							"value": "34"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"code\": \"ok\",\n    \"message\": \"success\"\n}"
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"id": "version",
+			"key": "version",
+			"value": "v1",
+			"type": "any",
+			"description": {
+				"content": "This is version of API schema.",
+				"type": "text/plain"
+			}
+		},
+		{
+			"id": "baseUrl",
+			"key": "baseUrl",
+			"value": "http://localhost:8000/api/{{version}}",
+			"type": "string"
+		}
+	],
+	"protocolProfileBehavior": {}
+}

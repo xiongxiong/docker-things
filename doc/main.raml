@@ -1,0 +1,150 @@
+#%RAML 1.0
+---
+title: dataservice API
+baseUri: http://localhost:8000/api/{version}
+version: v1
+
+
+/ping: # optional resource
+  description: ping pong
+  get: # HTTP method declaration
+    responses: # declare a response
+      200: # HTTP status code
+        body: # declare content of response
+          application/json: # media type
+            type: | # structural definition of a response (schema or type)
+              {
+                "title": "ping response",
+                "type": "object",
+                "properties": 
+                  {
+                    "message": 
+                      {
+                        "type": "string"
+                      }
+                  }
+              }
+            example: | # example of how a response looks
+              {
+                "message": "pong"
+              }
+
+/mqtt:
+  /subscribe:
+    description: 订阅broker和topic，建立连接，开始接收消息
+    post:
+      body:
+        application/json:
+          type: |
+            {
+              "type": "object",
+              "required": true,
+              "properties": 
+                {
+                  "clientID": 
+                    {
+                      "type": "string"
+                    },
+                  "client": 
+                    {
+                      "type": "object",
+                      "required": true,
+                      "properties": 
+                        {
+                          "username": 
+                            {
+                              "type": "string"
+                            },
+                          "password": 
+                            {
+                              "type": "string"
+                            },
+                          "brokers": 
+                            {
+                              "type": "array"
+                            },
+                          "topics": 
+                            {
+                              "type": "array"
+                            }
+                        }
+                    }
+                  }
+            }
+          example: |
+            {
+              "client": 
+              {
+                  "username": "name",
+                  "password": "pass",
+                  "brokers": ["tcp://localhost:1883"],
+                  "topics": [{"topic": "myTopic", "qos": 2}]
+              }
+            }
+      responses:
+        200:
+          body:
+            application/json:
+              type: |
+                {
+                  "title": "ping response",
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              example: |
+                {
+                  "code": "yes",
+                  "message": "success"
+                }
+  /unsubscribe:
+    description: 取消订阅，关闭连接，停止接收消息
+    post:
+      body: 
+        application/json:
+          type: |
+            {
+              "type": "object",
+              "required": true,
+              "properties":
+                {
+                  "clientID":
+                    {
+                      "type": "string",
+                      "required": true
+                    }
+                }
+            }
+          example: |
+            {
+              "clientID": "fcee34ba-2efb-4e8d-9cae-ddcb2d96d90e"
+            }
+      responses: 
+        200:
+          body:
+            application/json:
+              type: |
+                {
+                  "title": "ping response",
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              example: |
+                {
+                  "code": "yes",
+                  "message": "success"
+                }
+  

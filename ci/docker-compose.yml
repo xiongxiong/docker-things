@@ -75,6 +75,12 @@ services:
             - WAIT_BEFORE_HOSTS=10
             - WAIT_HOST_CONNECT_TIMEOUT=30
 
+    doc:
+        container_name: doc
+        image: wonderbear/thingspanel-doc:v1
+        ports:
+            - 9000:9000
+
 networks: 
     backend:
 

@@ -9,14 +9,14 @@ CREATE TABLE public.message (
         -- timestamp
         createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_client_topic ON messages (client_id, topic);
-CREATE INDEX idx_payload ON messages USING GIN (payload);
+CREATE INDEX idx_client_topic ON public.message (clientID, topic);
+CREATE INDEX idx_payload ON public.message USING GIN (payload);
 
 CREATE TABLE public.client (
         -- id (uuid)
         id char(36) PRIMARY KEY,
         -- is stopped
-        stopped boolean DEFAULT false,
+        stopped boolean DEFAULT FALSE,
         -- system user id
         userID text NOT NULL,
         -- client config
@@ -24,4 +24,4 @@ CREATE TABLE public.client (
         -- timestamp
         createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_payload ON messages USING GIN (payload);
+CREATE INDEX idx_payload ON public.client USING GIN (payload);
