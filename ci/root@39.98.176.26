@@ -1,0 +1,88 @@
+version: "3.7"
+
+services: 
+
+    # emqx:
+    #     container_name: emqx
+    #     image: emqx/emqx:v4.0.0
+    #     ports: 
+    #         - 1883:1883
+    #         - 8083:8083
+    #         - 8883:8883
+    #         - 8084:8084
+    #         - 18083:18083
+
+    mosquitto:
+        container_name: mosquitto
+        image: eclipse-mosquitto
+        ports: 
+            - 1883:1883
+            - 9001:9001
+        networks: 
+            - backend
+
+    rabbitmq:
+        container_name: rabbitmq
+        image: rabbitmq:3-management
+        ports: 
+            - 5672:5672
+            - 15672:15672
+        networks:
+            - backend
+        environment: 
+            RABBITMQ_DEFAULT_USER: guest
+            RABBITMQ_DEFAULT_PASS: guest
+
+    postgres:
+        container_name: postgres
+        image: wonderbear/thingspanel-postgres:v1
+        restart: always
+        ports: 
+            - 5432:5432
+        networks:
+            - backend
+        environment: 
+            POSTGRES_USER: guest
+            POSTGRES_PASSWORD: guest
+            POSTGRES_DB: thingspanel
+
+    postgres-admin:
+        container_name: postgres-admin
+        image: adminer
+        restart: always
+        ports:
+            - 8080:8080
+        networks: 
+            - backend
+        environment: 
+            ADMINER_DEFAULT_SERVER: postgres
+
+    dataservice:
+        container_name: dataservice
+        image: wonderbear/thingspanel-dataservice:v1
+        ports: 
+            - 8000:8000
+        networks: 
+            - backend
+        depends_on: 
+            - rabbitmq
+            - postgres
+        command: sh -c "/home/wait && /home/dataservice"
+        environment: 
+            - WAIT_HOSTS=rabbitmq:5672, postgres:5432
+            - WAIT_HOSTS_TIMEOUT=300
+            - WAIT_SLEEP_INTERVAL=10
+            - WAIT_BEFORE_HOSTS=10
+            - WAIT_HOST_CONNECT_TIMEOUT=30
+
+    doc:
+        container_name: doc
+        image: wonderbear/thingspanel-doc:v1
+        ports:
+            - 9000:9000
+
+networks: 
+    backend:
+
+# volumes: 
+#     postgres-data: 

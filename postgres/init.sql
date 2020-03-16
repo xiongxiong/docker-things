@@ -1,27 +1,31 @@
+-- 
+-- Name: message; Type: TABLE; Schema: public; Owner: postgres
+--
 CREATE TABLE public.message (
+        -- message id
         id bigserial PRIMARY KEY,
-        -- client id (uuid)
-        clientID char(36),
+        -- device id
+        device_id varchar(36),
         -- message topic
         topic text NOT NULL,
         -- message payload
         payload jsonb NOT NULL,
-        -- timestamp
-        createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+        -- create time
+        create_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_client_topic ON public.message (clientID, topic);
-CREATE INDEX idx_payload ON public.message USING GIN (payload);
 
-CREATE TABLE public.client (
-        -- id (uuid)
-        id char(36) PRIMARY KEY,
+-- 
+-- Name: connection; Type: TABLE; Schema: public; Owner: postgres
+--
+CREATE TABLE public.connection (
+        -- device id
+        id varchar(36) PRIMARY KEY,
         -- is stopped
         stopped boolean DEFAULT FALSE,
-        -- system user id
-        userID text NOT NULL,
-        -- client config
+        -- connection config
         payload jsonb NOT NULL,
-        -- timestamp
-        createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+        -- create time
+        create_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+        -- update time
+        update_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_payload ON public.client USING GIN (payload);
