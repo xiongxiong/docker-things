@@ -12,7 +12,6 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	gin "github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/streadway/amqp"
 )
 
@@ -108,25 +107,19 @@ func MqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mq
 		err := c.BindJSON(&rb)
 		tool.CheckThenPanic(err, "parse request body")
 
-		if len(rb.ClientID) != 0 {
-			// TODO process userID
-			isValid, err := store.ValidateClientID(db, "--", rb.ClientID)
-			tool.CheckThenPanic(err, "validate client id")
-			if isValid == false {
-				panic("invalid client id")
-			}
+		// TODO get token
+		token := ""
 
-			clientJSON, err := json.Marshal(rb.Client)
-			tool.CheckThenPanic(err, "json marshal client")
-			err = store.RenoClient(db, rb.ClientID, string(clientJSON))
-			tool.CheckThenPanic(err, "store client")
-		} else {
-			rb.ClientID = uuid.New().String()
-			clientJSON, err := json.Marshal(rb.Client)
-			tool.CheckThenPanic(err, "json marshal client")
-			err = store.SaveClient(db, "--", rb.ClientID, string(clientJSON))
-			tool.CheckThenPanic(err, "store client")
+		isValid, err := store.ValiClient(db, rb.ClientID, token)
+		tool.CheckThenPanic(err, "validate device token")
+		if isValid == false {
+			panic("invalid device token")
 		}
+
+		clientJSON, err := json.Marshal(rb.Client)
+		tool.CheckThenPanic(err, "json marshal client")
+		err = store.SaveClient(db, rb.ClientID, string(clientJSON))
+		tool.CheckThenPanic(err, "store client")
 
 		err = mqttManager.Subscribe(rb.ClientID, rb.Client.Username, rb.Client.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
 		tool.CheckThenPanic(err, "subscribe")
@@ -171,10 +164,10 @@ func MqttUnSubscribe(db *sql.DB, mqttManager *mqttC.Manager) func(c *gin.Context
 func pushFunc(amqpChan *amqp.Channel, amqpQueue *amqp.Queue) func(clientID string, msg mqtt.Message) {
 	return func(clientID string, msg mqtt.Message) {
 		sMsg := store.Message{
-			ClientID:  clientID,
-			Topic:     msg.Topic(),
-			Payload:   msg.Payload(),
-			CreatedAt: time.Now(),
+			ClientID: clientID,
+			Topic:    msg.Topic(),
+			Payload:  msg.Payload(),
+			CreateAt: time.Now(),
 		}
 		bs, err := json.Marshal(sMsg)
 		tool.CheckThenPrint(err, "marshal message")

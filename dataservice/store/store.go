@@ -26,6 +26,11 @@ type Message struct {
 	CreateAt time.Time `json:"create_at"`
 }
 
+// ValiClient validate client token
+func ValiClient(db *sql.DB, clientID, token string) (isValid bool, err error) {
+	return true, nil
+}
+
 // SaveClient save client
 func SaveClient(db *sql.DB, clientID, clientJSON string) (err error) {
 	ctx, cancel := context.WithCancel(context.Background())
