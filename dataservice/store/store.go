@@ -28,6 +28,7 @@ type Message struct {
 
 // ValiClient validate client token
 func ValiClient(db *sql.DB, clientID, token string) (isValid bool, err error) {
+	// TODO validate client
 	return true, nil
 }
 
