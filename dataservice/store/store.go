@@ -50,7 +50,7 @@ func SaveClient(db *sql.DB, clientID, clientJSON string) (err error) {
 	return
 }
 
-// StopClient save client
+// StopClient stop client
 func StopClient(db *sql.DB, clientID string) (err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

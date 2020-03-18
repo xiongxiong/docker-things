@@ -138,6 +138,7 @@ func serve(serverPort string, down chan struct{}, freeFunc func(), db *sql.DB, a
 	v1.GET("/ping", ping)
 	v1.POST("/mqtt/subscribe", controller.MqttSubscribe(db, amqpChan, amqpQueue, mqttManager))
 	v1.POST("/mqtt/unsubscribe", controller.MqttUnSubscribe(db, mqttManager))
+	v1.POST("/mqtt/status", controller.MqttStatus(mqttManager))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", serverPort),

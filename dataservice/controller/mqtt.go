@@ -7,7 +7,9 @@ import (
 	"dataservice/store"
 	"dataservice/tool"
 	"encoding/json"
+	"errors"
 	"log"
+	"net/http"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -27,12 +29,12 @@ type client struct {
 	Topics   []topic  `json:"topics"`
 }
 
-type reqbodySubscribe struct {
+type clientInfo struct {
 	ClientID string `json:"clientID"`
 	Client   client `json:"client"`
 }
 
-func (rbSubscribe *reqbodySubscribe) getBrokers() map[string]struct{} {
+func (rbSubscribe *clientInfo) getBrokers() map[string]struct{} {
 	brokers := make(map[string]struct{})
 	for _, v := range rbSubscribe.Client.Brokers {
 		brokers[v] = struct{}{}
@@ -40,7 +42,7 @@ func (rbSubscribe *reqbodySubscribe) getBrokers() map[string]struct{} {
 	return brokers
 }
 
-func (rbSubscribe *reqbodySubscribe) getTopics() map[string]byte {
+func (rbSubscribe *clientInfo) getTopics() map[string]byte {
 	topics := make(map[string]byte)
 	for _, p := range rbSubscribe.Client.Topics {
 		topics[p.Topic] = p.Qos
@@ -48,11 +50,7 @@ func (rbSubscribe *reqbodySubscribe) getTopics() map[string]byte {
 	return topics
 }
 
-type reqbodyUnSubscribe struct {
-	ClientID string `json:"clientID"`
-}
-
-func loadClients(db *sql.DB) []reqbodySubscribe {
+func loadClients(db *sql.DB) []clientInfo {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -60,7 +58,7 @@ func loadClients(db *sql.DB) []reqbodySubscribe {
 	tool.CheckThenPanic(err, "load data")
 	defer rows.Close()
 
-	clients := make([]reqbodySubscribe, 0)
+	clients := make([]clientInfo, 0)
 	for rows.Next() {
 		var id, userID, payload string
 		err = rows.Scan(&id, &userID, &payload)
@@ -70,7 +68,7 @@ func loadClients(db *sql.DB) []reqbodySubscribe {
 		err = json.Unmarshal([]byte(payload), &c)
 		tool.CheckThenPanic(err, "load clients -- json unmarshal")
 
-		clients = append(clients, reqbodySubscribe{
+		clients = append(clients, clientInfo{
 			ClientID: id,
 			Client:   c,
 		})
@@ -96,16 +94,15 @@ func MqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mq
 		defer func() {
 			if err := tool.Error(recover()); err != nil {
 				log.Println(err.Error())
-				c.JSON(200, gin.H{
-					"code":    "no",
-					"message": err.Error(),
-				})
+				c.AbortWithError(http.StatusInternalServerError, err)
 			}
 		}()
 
-		var rb reqbodySubscribe
+		var rb clientInfo
 		err := c.BindJSON(&rb)
-		tool.CheckThenPanic(err, "parse request body")
+		if err != nil {
+			c.AbortWithError(http.StatusBadRequest, err)
+		}
 
 		// TODO get token
 		token := ""
@@ -113,7 +110,7 @@ func MqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mq
 		isValid, err := store.ValiClient(db, rb.ClientID, token)
 		tool.CheckThenPanic(err, "validate device token")
 		if isValid == false {
-			panic("invalid device token")
+			c.AbortWithError(http.StatusUnauthorized, errors.New("invalid device token"))
 		}
 
 		clientJSON, err := json.Marshal(rb.Client)
@@ -124,10 +121,7 @@ func MqttSubscribe(db *sql.DB, amqpChan *amqp.Channel, amqpQueue *amqp.Queue, mq
 		err = mqttManager.Subscribe(rb.ClientID, rb.Client.Username, rb.Client.Password, rb.getBrokers(), rb.getTopics(), pushFunc(amqpChan, amqpQueue))
 		tool.CheckThenPanic(err, "subscribe")
 
-		c.JSON(200, gin.H{
-			"code":    "ok",
-			"message": "success",
-		})
+		c.JSON(http.StatusOK, nil)
 	}
 }
 
@@ -137,26 +131,54 @@ func MqttUnSubscribe(db *sql.DB, mqttManager *mqttC.Manager) func(c *gin.Context
 		defer func() {
 			if err := tool.Error(recover()); err != nil {
 				log.Println(err.Error())
-				c.JSON(200, gin.H{
-					"code":    "no",
-					"message": err.Error(),
-				})
+				c.AbortWithError(http.StatusInternalServerError, err)
 			}
 		}()
 
-		var rb reqbodyUnSubscribe
-		err := c.BindJSON(&rb)
-		tool.CheckThenPanic(err, "parse request body")
+		var req struct {
+			ClientID string `json:"clientID"`
+		}
+		err := c.BindJSON(&req)
+		if err != nil {
+			c.AbortWithError(http.StatusBadRequest, err)
+		}
 
-		err = store.StopClient(db, rb.ClientID)
+		err = store.StopClient(db, req.ClientID)
 		tool.CheckThenPanic(err, "stop client in store")
 
-		mqttManager.UnSubscribe(rb.ClientID)
+		mqttManager.UnSubscribe(req.ClientID)
 
-		c.JSON(200, gin.H{
-			"code":    "ok",
-			"message": "success",
-		})
+		c.JSON(http.StatusOK, nil)
+	}
+}
+
+// MqttStatus get client status
+func MqttStatus(mqttManager *mqttC.Manager) func(c *gin.Context) {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := tool.Error(recover()); err != nil {
+				log.Println(err.Error())
+				c.AbortWithError(http.StatusInternalServerError, err)
+			}
+		}()
+
+		var req struct {
+			ClientID string `json:"clientID"`
+		}
+		err := c.BindJSON(&req)
+		if err != nil {
+			c.AbortWithError(http.StatusBadRequest, err)
+		}
+
+		status, err := mqttManager.GetClientStatus(req.ClientID)
+		if err != nil {
+			c.AbortWithError(http.StatusBadRequest, err)
+		}
+
+		res := struct {
+			Status string `json:"status"`
+		}{status}
+		c.JSON(http.StatusOK, res)
 	}
 }
 

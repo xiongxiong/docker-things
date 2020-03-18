@@ -35,7 +35,7 @@ func Test_loadClients(t *testing.T) {
 		}
 	}
 	rows := sqlmock.NewRows([]string{"id", "userID", "payload"})
-	rb0 := reqbodySubscribe{
+	rb0 := clientInfo{
 		ClientID: "id_0",
 		Client:   mockClient(0),
 	}
@@ -44,7 +44,7 @@ func Test_loadClients(t *testing.T) {
 		t.Fatalf("unable to marshal client, %s", err)
 	}
 	rows.AddRow(rb0.ClientID, "userID0", jsonStr0)
-	rb1 := reqbodySubscribe{
+	rb1 := clientInfo{
 		ClientID: "id_1",
 		Client:   mockClient(1),
 	}
@@ -61,14 +61,14 @@ func Test_loadClients(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []reqbodySubscribe
+		want []clientInfo
 	}{
 		{
 			name: "load",
 			args: args{
 				db: db,
 			},
-			want: []reqbodySubscribe{
+			want: []clientInfo{
 				rb0,
 				rb1,
 			},

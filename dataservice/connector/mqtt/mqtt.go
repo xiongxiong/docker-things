@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"dataservice/tool"
+	"errors"
 	"log"
 	"sync"
 
@@ -18,6 +19,7 @@ type client struct {
 	mqttClient mqtt.Client
 	chMsg      chan mqtt.Message
 	chQuit     chan struct{}
+	status     error
 }
 
 // Manager ...
@@ -60,6 +62,29 @@ func (_manager *Manager) addClient(clientID, username, password string, mapBroke
 	return _client
 }
 
+// set client status
+func (_manager *Manager) setClientStatus(clientID string, status error) {
+	_manager.lock.RLock()
+	defer _manager.lock.RUnlock()
+
+	_client := _manager.mapClient[clientID]
+	if _client != nil {
+		_client.status = status
+	}
+}
+
+// GetClientStatus get client status
+func (_manager *Manager) GetClientStatus(clientID string) (status string, err error) {
+	_manager.lock.RLock()
+	defer _manager.lock.RUnlock()
+
+	_client := _manager.mapClient[clientID]
+	if _client != nil {
+		return _client.status.Error(), nil
+	}
+	return "", errors.New("no such client")
+}
+
 func newClient(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte) *client {
 	_client := client{
 		username:  username,
@@ -76,8 +101,15 @@ func newClient(clientID, username, password string, mapBroker map[string]struct{
 	for k := range _client.mapBroker {
 		opts.AddBroker(k)
 	}
+	opts.SetAutoReconnect(true)
 	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
 		_client.chMsg <- msg
+	})
+	opts.SetOnConnectHandler(func(_ mqtt.Client) {
+		_client.status = nil
+	})
+	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
+		_client.status = err
 	})
 	_client.mqttClient = mqtt.NewClient(opts)
 
@@ -99,6 +131,7 @@ func (_manager *Manager) delClient(clientID string) {
 func (_manager *Manager) Subscribe(clientID, username, password string, mapBroker map[string]struct{}, mapTopic map[string]byte, msgProc messageProcessor) (err error) {
 	defer func() {
 		err = tool.Error(recover())
+		_manager.setClientStatus(clientID, err)
 	}()
 
 	_client := _manager.addClient(clientID, username, password, mapBroker, mapTopic)
